@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+import anyio
+import httpx
 
 from labs import router as lab_router
 
@@ -17,8 +18,14 @@ def test_get_outputs_pdf_returns_service_payload(monkeypatch) -> None:
 
     monkeypatch.setattr(lab_router, "service", _ServiceStub())
 
-    with TestClient(app) as client:
-        response = client.get("/outputs/pdf")
+    async def _request_output() -> httpx.Response:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            return await client.get("/outputs/pdf")
+
+    response = anyio.run(_request_output)
 
     assert response.status_code == 200
     assert response.json() == {
