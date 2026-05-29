@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import os
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -21,12 +22,17 @@ def extract_github_repositories(markdown: str) -> list[tuple[str, str]]:
 
 
 def http_get_json(url: str) -> dict:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "mebrain-blog-writer",
+    }
+    github_token = os.getenv("GITHUB_TOKEN", "").strip()
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+
     request = Request(
         url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "mebrain-blog-writer",
-        },
+        headers=headers,
     )
     with urlopen(request, timeout=10) as response:
         payload = response.read().decode("utf-8")

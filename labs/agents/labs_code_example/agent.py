@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import base64
 from collections.abc import Mapping
-import json
 import logging
+from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from core.llm_config import AgentRole, LLMConfig
-from labs.agents.labs_post_writer.constants import GITHUB_REPO_URL_PATTERN
+from labs.providers.github.github import GitHubProvider
 
 from .prompts import LabCodeExamplePrompt
 from .schema import LabCodeExampleItem, LabCodeExampleRequest, LabCodeExampleResponse
@@ -22,137 +20,122 @@ from .schema import LabCodeExampleItem, LabCodeExampleRequest, LabCodeExampleRes
 class LabCodeExampleAgent:
     """Extracts practical code examples from repositories referenced in notes."""
 
-    MAX_FILE_EXCERPT_CHARS = 2500
-    MAX_FILES_PER_REPO = 3
-
-    def __init__(self, llm: BaseChatModel | None = None) -> None:
+    def __init__(
+        self,
+        llm: BaseChatModel | None = None,
+        github_provider: GitHubProvider | None = None,
+    ) -> None:
         self.logger = logging.getLogger(__name__)
         self.agent_name = AgentRole.CODE_EXAMPLE
         self.llm = llm or LLMConfig.build_chat_model_for_agent(AgentRole.CODE_EXAMPLE)
-
-    @staticmethod
-    def _extract_repositories(text: str) -> list[str]:
-        repositories: list[str] = []
-        seen: set[str] = set()
-        for owner, repo in GITHUB_REPO_URL_PATTERN.findall(text):
-            normalized = f"{owner}/{repo.removesuffix('.git')}"
-            if normalized not in seen:
-                seen.add(normalized)
-                repositories.append(normalized)
-        return repositories
-
-    @staticmethod
-    def _http_get_json(url: str) -> dict:
-        request = Request(
-            url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "labs-code-example-agent",
-            },
-        )
-        with urlopen(request, timeout=10) as response:
-            payload = response.read().decode("utf-8")
-        return json.loads(payload)
-
-    @staticmethod
-    def _decode_repo_file_content(raw_content: str) -> str:
-        if not raw_content:
-            return ""
-        return base64.b64decode(raw_content).decode("utf-8", errors="ignore")
-
-    @staticmethod
-    def _is_candidate_source_file(path: str) -> bool:
-        lowered = path.lower()
-        if lowered.endswith(
-            (
-                ".py",
-                ".ts",
-                ".tsx",
-                ".js",
-                ".jsx",
-                ".go",
-                ".java",
-                ".kt",
-                ".rs",
-                ".yaml",
-                ".yml",
-            )
-        ):
-            pass
-        else:
-            return False
-
-        keywords = ("main", "app", "router", "route", "service", "handler", "config")
-        return any(keyword in lowered for keyword in keywords)
-
-    def _fetch_repo_context(self, repository: str) -> str:
-        owner, repo = repository.split("/", maxsplit=1)
-        repo_api = f"https://api.github.com/repos/{owner}/{repo}"
-        repo_data = self._http_get_json(repo_api)
-        default_branch = repo_data.get("default_branch") or "main"
-
-        lines = [
-            f"Repository: {repository}",
-            f"Description: {repo_data.get('description') or 'N/A'}",
-            f"Language: {repo_data.get('language') or 'N/A'}",
-            f"Default branch: {default_branch}",
-        ]
-
-        try:
-            tree_api = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{default_branch}?recursive=1"
-            tree_data = self._http_get_json(tree_api)
-            tree_items = tree_data.get("tree", [])
-        except Exception:
-            tree_items = []
-
-        candidate_paths: list[str] = []
-        for item in tree_items:
-            item_type = str(item.get("type", ""))
-            path = str(item.get("path", ""))
-            if item_type == "blob" and self._is_candidate_source_file(path):
-                candidate_paths.append(path)
-            if len(candidate_paths) >= self.MAX_FILES_PER_REPO:
-                break
-
-        for path in candidate_paths:
-            try:
-                content_api = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
-                content_data = self._http_get_json(content_api)
-                decoded = self._decode_repo_file_content(str(content_data.get("content", "")))
-                if not decoded.strip():
-                    continue
-                excerpt = decoded.strip()[: self.MAX_FILE_EXCERPT_CHARS]
-                lines.append(f"File: {path}")
-                lines.append(excerpt)
-            except Exception:
-                self.logger.info(
-                    "agent=%s | could not read file %s in %s",
-                    self.agent_name,
-                    path,
-                    repository,
-                )
-
-        return "\n".join(lines)
+        self.github_provider = github_provider or GitHubProvider()
 
     def _format_human_context(
         self,
         request: LabCodeExampleRequest,
         repositories: list[str],
+        focus_paths: list[str],
         repo_context_sections: list[str],
     ) -> str:
         repos_text = "\n".join(f"- {repo}" for repo in repositories) or "- none"
+        focus_paths_text = "\n".join(f"- {path}" for path in focus_paths) or "- none"
         sections_text = "\n\n---\n\n".join(repo_context_sections) or "No repository context available."
         return (
             f"Max examples: {request.max_examples}\n"
             f"Repositories:\n{repos_text}\n\n"
+            f"Focus paths:\n{focus_paths_text}\n\n"
             "Original notes context:\n"
             f"{request.notes_context}\n\n"
             "Fetched repository context:\n"
             f"{sections_text}"
         )
 
+    @staticmethod
+    def _language_from_file_path(file_path: str) -> str:
+        suffix = Path(file_path).suffix.lower()
+        return {
+            ".py": "python",
+            ".ts": "typescript",
+            ".tsx": "typescript",
+            ".js": "javascript",
+            ".jsx": "javascript",
+            ".go": "go",
+            ".java": "java",
+            ".kt": "kotlin",
+            ".rs": "rust",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+        }.get(suffix, "text")
+
+    @staticmethod
+    def _extract_context_file_paths(repo_context_sections: list[str]) -> list[str]:
+        file_paths: list[str] = []
+        seen: set[str] = set()
+        for section in repo_context_sections:
+            for line in section.splitlines():
+                if not line.startswith("File: "):
+                    continue
+                file_path = line.removeprefix("File: ").strip()
+                if file_path and file_path not in seen:
+                    seen.add(file_path)
+                    file_paths.append(file_path)
+        return file_paths
+
+    @classmethod
+    def _normalize_response_data(
+        cls,
+        response_data: dict,
+        repositories: list[str],
+        repo_context_sections: list[str],
+    ) -> dict:
+        examples = response_data.get("examples", [])
+        if not isinstance(examples, list):
+            response_data["examples"] = []
+            return response_data
+
+        default_repository = repositories[0] if repositories else ""
+        context_file_paths = cls._extract_context_file_paths(repo_context_sections)
+        normalized_examples: list[dict] = []
+
+        for index, example in enumerate(examples):
+            if not isinstance(example, Mapping):
+                continue
+            normalized = dict(example)
+            snippet = str(normalized.get("snippet", "")).strip()
+            if not snippet:
+                continue
+
+            fallback_file_path = (
+                context_file_paths[index]
+                if index < len(context_file_paths)
+                else context_file_paths[0] if context_file_paths else "unknown"
+            )
+            normalized.setdefault("repository", default_repository)
+            normalized.setdefault("file_path", fallback_file_path)
+            normalized.setdefault(
+                "language", cls._language_from_file_path(normalized["file_path"])
+            )
+            normalized.setdefault(
+                "why_it_matters",
+                "Shows a concrete implementation detail from the fetched repository context.",
+            )
+            normalized.setdefault(
+                "integration_hint",
+                "Use this snippet as a repository-backed example in the technical lab.",
+            )
+            normalized_examples.append(normalized)
+
+        response_data["examples"] = normalized_examples
+        return response_data
+
     def extract_examples(self, request: LabCodeExampleRequest) -> LabCodeExampleResponse:
-        repositories = list(dict.fromkeys(request.repositories + self._extract_repositories(request.notes_context)))
+        repositories = list(
+            dict.fromkeys(
+                request.repositories
+                + self.github_provider.extract_repositories(request.notes_context)
+            )
+        )
+        focus_paths = self.github_provider.extract_focus_paths(request.notes_context)
         if not repositories:
             return LabCodeExampleResponse(
                 examples=[],
@@ -164,7 +147,9 @@ class LabCodeExampleAgent:
         repo_context_sections: list[str] = []
         for repository in repositories:
             try:
-                repo_context_sections.append(self._fetch_repo_context(repository))
+                repo_context_sections.append(
+                    self.github_provider.fetch_repo_context(repository, focus_paths)
+                )
             except HTTPError as exc:
                 warnings.append(f"Could not fetch {repository} (http={exc.code}).")
             except URLError as exc:
@@ -189,7 +174,9 @@ class LabCodeExampleAgent:
         messages = [
             SystemMessage(content=LabCodeExamplePrompt.build_system_prompt()),
             HumanMessage(
-                content=self._format_human_context(request, repositories, repo_context_sections)
+                content=self._format_human_context(
+                    request, repositories, focus_paths, repo_context_sections
+                )
             ),
         ]
 
@@ -214,6 +201,9 @@ class LabCodeExampleAgent:
                 "summary": getattr(response, "summary", ""),
                 "warnings": getattr(response, "warnings", []),
             }
+        response_data = self._normalize_response_data(
+            response_data, repositories, repo_context_sections
+        )
 
         try:
             parsed = LabCodeExampleResponse.model_validate(response_data)

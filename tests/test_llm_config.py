@@ -1,4 +1,5 @@
 import core.llm_config as llm_config
+from core.contants import DEFAULT_OPENAI_MODEL
 from core.llm_config import AgentRole, LLMProvider
 
 
@@ -40,3 +41,27 @@ def test_resolve_model_invalid_role_model_fallback(monkeypatch) -> None:
 
     resolved = llm_config.LLMConfig._resolve_model(AgentRole.REVIEWER, LLMProvider.GROQ)
     assert resolved == "llama-3.1-8b-instant"
+
+
+def test_resolve_model_blank_openai_env_falls_back_to_builtin(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_TRANSLATOR_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_TRANSLATOR_MODEL", "")
+    monkeypatch.setenv("OPENAI_MODEL", "")
+
+    resolved = llm_config.LLMConfig._resolve_model(
+        AgentRole.TRANSLATOR, LLMProvider.OPENAI
+    )
+
+    assert resolved == DEFAULT_OPENAI_MODEL
+
+
+def test_resolve_model_invalid_global_env_falls_back_to_builtin(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_TRANSLATOR_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_TRANSLATOR_MODEL", "not-a-real-openai-model")
+    monkeypatch.setenv("OPENAI_MODEL", "also-invalid")
+
+    resolved = llm_config.LLMConfig._resolve_model(
+        AgentRole.TRANSLATOR, LLMProvider.OPENAI
+    )
+
+    assert resolved == DEFAULT_OPENAI_MODEL
