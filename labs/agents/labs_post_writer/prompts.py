@@ -12,7 +12,10 @@ Rules:
 1. Use all relevant information from the provided context.
 2. Use code provided to improve your writting.
 3. Remove duplication, vague fragments, and disconnected notes.
-4. Organize the lab with a logical flow (introduction, core sections, conclusion).
+4. Organize the lab with a logical flow (introduction, core sections, conclusion). 
+    1. Keep the post as explained as possible.
+    2. Avoid subdots (Create them only if necessary).
+    3. Preserve the original idea from the author fixing grammar, semantic, and conceptual mistakes.
 5. Return only the final lab content in Markdown.
 6. Do not add commentary before or after the Markdown.
 7. Use provided code examples for enchance your explanations.

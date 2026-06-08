@@ -1,12 +1,20 @@
 """HTTP routes for Blog Post Writer features."""
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 
-from labs.agents.labs_reviewer.schema import LabReviewerRequest, LabReviewerResponse
+from core.auth.dependencies import get_current_user
 from labs.service import LabPostService
 
-router = APIRouter(prefix="/labs", tags=["Blog Post Writer"])
-outputs_router = APIRouter(prefix="/outputs", tags=["Outputs"])
+router = APIRouter(
+    prefix="/labs",
+    tags=["Blog Post Writer"],
+    dependencies=[Depends(get_current_user)],
+)
+outputs_router = APIRouter(
+    prefix="/outputs",
+    tags=["Outputs"],
+    dependencies=[Depends(get_current_user)],
+)
 service = LabPostService()
 
 
