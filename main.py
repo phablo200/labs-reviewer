@@ -2,8 +2,9 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from labs import router as lab_post
+from core.auth import router as auth_router
 from core.middleware.required_headers import RequiredHeadersMiddleware
+from labs import router as lab_post
 
 app = FastAPI(title="MeBrain Agents API")
 logging.basicConfig(
@@ -32,6 +33,8 @@ app.add_middleware(RequiredHeadersMiddleware)
 
 app.include_router(lab_post.router)
 app.include_router(lab_post.outputs_router)
+app.include_router(auth_router.router)
+
 
 @app.get("/")
 def root() -> dict[str, str]:
