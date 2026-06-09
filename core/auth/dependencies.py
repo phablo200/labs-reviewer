@@ -12,7 +12,15 @@ from core.auth.token_verifier import (
 from core.config import settings
 
 
-bearer_scheme = HTTPBearer(auto_error=False)
+bearer_scheme = HTTPBearer(
+    auto_error=False,
+    bearerFormat="JWT",
+    scheme_name="BearerAuth",
+    description=(
+        "Paste a JWT bearer token. Swagger UI sends it as "
+        "`Authorization: Bearer <token>`."
+    ),
+)
 
 
 def get_token_verifier() -> TokenVerifier:

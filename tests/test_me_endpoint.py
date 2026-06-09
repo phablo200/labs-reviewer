@@ -89,3 +89,18 @@ def test_me_returns_authenticated_user(monkeypatch) -> None:
         "profile_id": "profile-id",
         "application_id": APPLICATION_ID,
     }
+
+
+def test_me_openapi_documents_authorization_header() -> None:
+    schema = _app().openapi()
+
+    assert schema["components"]["securitySchemes"]["BearerAuth"] == {
+        "type": "http",
+        "description": (
+            "Paste a JWT bearer token. Swagger UI sends it as "
+            "`Authorization: Bearer <token>`."
+        ),
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+    }
+    assert schema["paths"]["/me"]["get"]["security"] == [{"BearerAuth": []}]
