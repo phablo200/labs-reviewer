@@ -4,7 +4,7 @@ import httpx
 
 from core.auth.dependencies import get_current_user
 from core.auth.schemas import AuthenticatedUser
-from labs import router as lab_router
+from labs.agents import router as lab_router
 
 
 def test_get_outputs_pdf_returns_service_payload(monkeypatch) -> None:

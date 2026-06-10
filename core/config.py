@@ -22,6 +22,8 @@ class Settings:
         "AUTH_EXPECTED_APPLICATION_ID",
         "00000000-0000-0000-0000-000000000002",
     )
+    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+    MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "labs_reviewer")
 
 
 settings = Settings()

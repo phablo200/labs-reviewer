@@ -7,7 +7,7 @@ from pathlib import Path
 from labs.agents.labs_post_metadata.schema import LabPostMetadataRequest, LabPostMetadataResponse
 from labs.agents.labs_post_translator.schema import LabPostTranslatorRequest
 from labs.agents.labs_post_writer.schema import LabPostWriterRequest
-from labs.contants import PUBLIC_PDF_DIR
+from labs.agents.contants import PUBLIC_PDF_DIR
 from labs.helpers.pdf_helper import PDFHelper
 
 logger = logging.getLogger(__name__)

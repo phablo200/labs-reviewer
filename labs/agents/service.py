@@ -11,7 +11,7 @@ from labs.agents.labs_post_writer.agent import LabPostWriterAgent
 from labs.agents.labs_post_translator.agent import LabPostTranslatorAgent
 from labs.agents.labs_reviewer.agent import LabReviewerAgent
 from labs.agents.labs_reviewer.schema import LabReviewerRequest, LabReviewerResponse
-from labs.contants import PUBLIC_MARKDOWN_DIR, PUBLIC_PDF_DIR
+from labs.agents.contants import PUBLIC_MARKDOWN_DIR, PUBLIC_PDF_DIR
 from labs.helpers.markdown_helper import MarkdownHelper
 from labs.helpers.pdf_helper import PDFHelper
 from pathlib import Path

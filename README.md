@@ -9,15 +9,17 @@ FastAPI service that turns raw Markdown lab notes into reviewed technical posts.
 - Generate English reviewed Markdown plus a pt-BR translated Markdown file.
 - Render generated Markdown files to PDF.
 - List generated Markdown and PDF outputs through API endpoints.
+- Read MongoDB-backed process status metadata.
 - Configure global or per-agent LLM provider, model, and temperature values.
 
 ## Project Structure
 
 - `main.py`: FastAPI app entrypoint, CORS setup, middleware, and router registration.
-- `core/`: shared settings, required-header middleware, and LLM configuration.
-- `labs/router.py`: `/labs` and `/outputs` API routes.
-- `labs/service.py`: orchestration layer for the review/export workflow.
-- `labs/agents/`: specialized agent implementations, prompts, and schemas.
+- `core/`: shared settings, required-header middleware, database lifecycle, and LLM configuration.
+- `labs/agents/router.py`: `/labs` and `/outputs` API routes.
+- `labs/agents/service.py`: orchestration layer for the review/export workflow.
+- `labs/agents/`: specialized agent implementations, prompts, schemas, and workflow API wiring.
+- `labs/process_status/`: MongoDB process status models, schemas, repository, service, and routes.
 - `labs/providers/github/`: GitHub repository extraction used by code-example generation.
 - `labs/helpers/`: Markdown and PDF persistence helpers.
 - `public/markdown/`: generated Markdown output files.
@@ -28,6 +30,7 @@ FastAPI service that turns raw Markdown lab notes into reviewed technical posts.
 ## Requirements
 
 - Python 3.12+
+- MongoDB for process status storage
 - OpenAI API key for OpenAI-backed agents
 - Groq API key for Groq-backed agents
 - Optional GitHub token for repository extraction workflows
@@ -49,6 +52,8 @@ Common variables:
 OPENAI_API_KEY=""
 GROQ_API_KEY=""
 GITHUB_TOKEN=""
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DATABASE=labs_reviewer
 OPENAI_MODEL=gpt-4o-mini
 GROQ_MODEL=llama-3.1-8b-instant
 LLM_POST_WRITER_PROVIDER=openai
@@ -119,6 +124,10 @@ Lists generated PDF files.
 ```bash
 curl http://127.0.0.1:3015/outputs/pdf
 ```
+
+### `GET /labs/processes/{process_id}/status`
+
+Returns persisted process status metadata for the authenticated user. Agent `result` values are stored internally but excluded from this response.
 
 ## Tests
 

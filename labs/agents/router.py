@@ -3,7 +3,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 
 from core.auth.dependencies import get_current_user
-from labs.service import LabPostService
+from labs.agents.service import LabPostService
 
 router = APIRouter(
     prefix="/labs",

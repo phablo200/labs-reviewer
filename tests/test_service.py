@@ -2,8 +2,8 @@ from pathlib import Path
 
 from fastapi import BackgroundTasks
 
-import labs.service as service_module
-from labs.service import LabPostService
+import labs.agents.service as service_module
+from labs.agents.service import LabPostService
 
 
 def test_enqueue_markdown_organization_uses_public_markdowns_path() -> None:

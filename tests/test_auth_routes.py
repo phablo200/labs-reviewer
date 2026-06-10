@@ -6,7 +6,7 @@ import httpx
 import jwt
 
 from core.config import settings
-from labs import router as lab_router
+from labs.agents import router as lab_router
 
 
 SECRET = "test-secret"
