@@ -1,14 +1,21 @@
 """Markdown-related helper methods for the lab workflow."""
 
+import asyncio
+from uuid import UUID
 from datetime import date
 import logging
 from pathlib import Path
+
+import anyio
 
 from labs.agents.labs_post_metadata.schema import LabPostMetadataRequest, LabPostMetadataResponse
 from labs.agents.labs_post_translator.schema import LabPostTranslatorRequest
 from labs.agents.labs_post_writer.schema import LabPostWriterRequest
 from labs.agents.contants import PUBLIC_PDF_DIR
 from labs.helpers.pdf_helper import PDFHelper
+from labs.process_status.models import AgentProcessStatus
+from labs.process_status.proxy import AgentInvocationProxy, AgentProcessContext
+from labs.process_status.service import ProcessStatusService
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +178,139 @@ published: true
 
             translated_response = translator_agent.translate(
                 LabPostTranslatorRequest(content=normalized_reviewed_markdown)
+            )
+            pt_br_output_path = output_path.with_name(
+                f"{output_path.stem}_pt_br{output_path.suffix}"
+            )
+            normalized_translated_markdown = MarkdownHelper.compose_markdown_with_metadata(
+                translated_response.translated_markdown,
+                metadata_response,
+            )
+            pt_br_output_path.write_text(
+                normalized_translated_markdown,
+                encoding="utf-8",
+            )
+            reviewed_pdf_path = PUBLIC_PDF_DIR / f"{output_path.stem}.pdf"
+            pt_br_pdf_path = PUBLIC_PDF_DIR / f"{pt_br_output_path.stem}.pdf"
+            try:
+                PDFHelper.render_markdown_to_pdf(
+                    normalized_reviewed_markdown,
+                    reviewed_pdf_path,
+                )
+                PDFHelper.render_markdown_to_pdf(
+                    normalized_translated_markdown,
+                    pt_br_pdf_path,
+                )
+            except Exception:
+                logger.exception("PDF generation failed, markdown files were kept")
+        except Exception as exc:
+            if not reviewed_markdown_written:
+                output_path.write_text(
+                    f"Failed to process markdown notes.\n\nError: {exc}",
+                    encoding="utf-8",
+                )
+            else:
+                logger.exception(
+                    "Processing failed after markdown write; preserving markdown file"
+                )
+
+    @staticmethod
+    async def process_and_save_markdown_with_status(
+        context: str,
+        output_path: Path,
+        writer_agent,
+        translator_agent,
+        metadata_agent,
+        process_status_id: UUID,
+        process_status_service: ProcessStatusService,
+    ) -> None:
+        """Generate markdown while tracking process and agent status."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        PUBLIC_PDF_DIR.mkdir(parents=True, exist_ok=True)
+        reviewed_markdown_written = False
+
+        root_context = AgentProcessContext(process_status_id=process_status_id)
+        loop = asyncio.get_running_loop()
+
+        def _run_async_from_worker(coroutine):
+            return asyncio.run_coroutine_threadsafe(coroutine, loop).result()
+
+        def _configure_writer_children(
+            writer_process: AgentProcessStatus,
+        ) -> None:
+            child_context = AgentProcessContext(
+                process_status_id=process_status_id,
+                parent_agent_process_status_id=writer_process.id,
+            )
+            writer_agent.code_example_agent = AgentInvocationProxy(
+                agent=writer_agent.code_example_agent,
+                agent_name="Labs Code Examples",
+                context=child_context,
+                status_service=process_status_service,
+                tracked_methods={"extract_examples"},
+                loop_to=1,
+                async_runner=_run_async_from_worker,
+            )
+            writer_agent.blog_reviwer = AgentInvocationProxy(
+                agent=writer_agent.blog_reviwer,
+                agent_name="Labs Reviewer",
+                context=child_context,
+                status_service=process_status_service,
+                tracked_methods={"revise"},
+                loop_to=3,
+                async_runner=_run_async_from_worker,
+            )
+
+        writer_proxy = AgentInvocationProxy(
+            agent=writer_agent,
+            agent_name="Labs Writer",
+            context=root_context,
+            status_service=process_status_service,
+            tracked_methods={"organize_notes"},
+            child_proxy_factory=_configure_writer_children,
+            async_runner=_run_async_from_worker,
+        )
+        metadata_proxy = AgentInvocationProxy(
+            agent=metadata_agent,
+            agent_name="Labs Metadata",
+            context=root_context,
+            status_service=process_status_service,
+            tracked_methods={"generate"},
+            async_runner=_run_async_from_worker,
+        )
+        translator_proxy = AgentInvocationProxy(
+            agent=translator_agent,
+            agent_name="Labs Translator",
+            context=root_context,
+            status_service=process_status_service,
+            tracked_methods={"translate"},
+            async_runner=_run_async_from_worker,
+        )
+
+        try:
+            response = await anyio.to_thread.run_sync(
+                writer_proxy.organize_notes,
+                LabPostWriterRequest(context=context),
+            )
+            metadata_response: LabPostMetadataResponse | None = None
+            try:
+                metadata_response = await anyio.to_thread.run_sync(
+                    metadata_proxy.generate,
+                    LabPostMetadataRequest(content=response.reviewed_markdown),
+                )
+            except Exception:
+                logger.exception("Metadata generation failed, using fallback metadata")
+
+            normalized_reviewed_markdown = MarkdownHelper.compose_markdown_with_metadata(
+                response.reviewed_markdown,
+                metadata_response,
+            )
+            output_path.write_text(normalized_reviewed_markdown, encoding="utf-8")
+            reviewed_markdown_written = True
+
+            translated_response = await anyio.to_thread.run_sync(
+                translator_proxy.translate,
+                LabPostTranslatorRequest(content=normalized_reviewed_markdown),
             )
             pt_br_output_path = output_path.with_name(
                 f"{output_path.stem}_pt_br{output_path.suffix}"

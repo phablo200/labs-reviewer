@@ -11,6 +11,7 @@ from labs.agents import router as lab_router
 
 SECRET = "test-secret"
 APPLICATION_ID = "00000000-0000-0000-0000-000000000002"
+USER_ID = "11111111-1111-1111-1111-111111111111"
 
 
 def _token(
@@ -63,9 +64,10 @@ async def _post_review(headers: dict[str, str] | None = None) -> httpx.Response:
 
 
 class _ServiceStub:
-    def enqueue_markdown_organization(self, **_kwargs):
+    async def enqueue_markdown_organization(self, **_kwargs):
         return {
             "message": "Processing started.",
+            "process_id": "00000000-0000-0000-0000-000000000001",
             "output_file": "public/markdown/notes_reviewd.md",
         }
 
@@ -138,12 +140,23 @@ def test_outputs_markdown_accepts_valid_token(monkeypatch) -> None:
 def test_labs_review_accepts_valid_token(monkeypatch) -> None:
     _configure_auth(monkeypatch)
     monkeypatch.setattr(lab_router, "service", _ServiceStub())
-    token = _token()
+    token = jwt.encode(
+        {
+            "sub": USER_ID,
+            "email": "user@example.com",
+            "profile_id": "profile-id",
+            "application_id": APPLICATION_ID,
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+        },
+        SECRET,
+        algorithm="HS256",
+    )
 
     response = anyio.run(_post_review, {"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
     assert response.json() == {
         "message": "Processing started.",
+        "process_id": "00000000-0000-0000-0000-000000000001",
         "output_file": "public/markdown/notes_reviewd.md",
     }

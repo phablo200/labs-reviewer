@@ -1,5 +1,7 @@
 from pathlib import Path
+from uuid import UUID
 
+import anyio
 from fastapi import BackgroundTasks
 
 import labs.agents.service as service_module
@@ -13,14 +15,29 @@ def test_enqueue_markdown_organization_uses_public_markdowns_path() -> None:
     service.writer_agent = object()
     service.translator_agent = object()
     service.metadata_agent = object()
+    service.process_status_service = _ProcessStatusServiceStub()
 
-    result = service.enqueue_markdown_organization(
-        background_tasks=BackgroundTasks(),
-        filename="example.md",
-        context="# Notes",
-    )
+    async def _enqueue():
+        return await service.enqueue_markdown_organization(
+            background_tasks=BackgroundTasks(),
+            filename="example.md",
+            context="# Notes",
+            user_id=UUID("11111111-1111-1111-1111-111111111111"),
+        )
+
+    result = anyio.run(_enqueue)
 
     assert "public/markdown/example_reviewd.md" in result["output_file"]
+    assert result["process_id"] == "00000000-0000-0000-0000-000000000001"
+
+
+class _ProcessStatus:
+    id = UUID("00000000-0000-0000-0000-000000000001")
+
+
+class _ProcessStatusServiceStub:
+    async def create_process_for_review(self, **_kwargs):
+        return _ProcessStatus()
 
 
 def test_service_initialization_wires_role_models(monkeypatch) -> None:

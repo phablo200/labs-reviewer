@@ -45,6 +45,7 @@ app.add_middleware(RequiredHeadersMiddleware)
 app.include_router(lab_post.router)
 app.include_router(lab_post.outputs_router)
 app.include_router(process_status_router.router)
+app.include_router(process_status_router.agent_process_router)
 app.include_router(auth_router.router)
 
 

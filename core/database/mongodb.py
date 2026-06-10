@@ -6,7 +6,7 @@ from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
 from core.config import settings
-from labs.process_status.models import ProcessStatus
+from labs.process_status.models import AgentProcessStatus, ProcessStatus
 
 _client: AsyncMongoClient | None = None
 
@@ -17,7 +17,7 @@ async def init_mongodb() -> None:
     _client = AsyncMongoClient(settings.MONGODB_URI)
     await init_beanie(
         database=_client[settings.MONGODB_DATABASE],
-        document_models=[ProcessStatus],
+        document_models=[ProcessStatus, AgentProcessStatus],
     )
 
 

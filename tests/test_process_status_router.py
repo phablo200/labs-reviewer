@@ -8,46 +8,85 @@ import httpx
 from core.auth.dependencies import get_current_user
 from core.auth.schemas import AuthenticatedUser
 from labs.process_status import router as process_status_router
-from labs.process_status.models import AgentStatus, ProcessStatus
-from labs.process_status.schemas import ProcessStatusResponse
+from labs.process_status.models import AgentProcessStatus, ProcessStatus
+from labs.process_status.schemas import (
+    AgentProcessStatusDetailResponse,
+    AgentProcessStatusSummaryResponse,
+    ProcessStatusResponse,
+)
 
 
 USER_ID = UUID("11111111-1111-1111-1111-111111111111")
-OTHER_USER_ID = UUID("22222222-2222-2222-2222-222222222222")
 
 
-def _process_status(**kwargs) -> ProcessStatus:
-    values = {
-        "id": uuid4(),
-        "file": "notes.md",
-        "created_at": datetime.now(timezone.utc),
-        "user_id": USER_ID,
-        "data": [],
-    }
-    values.update(kwargs)
-    return ProcessStatus.model_construct(**values)
+def _process_status_response() -> ProcessStatusResponse:
+    child = AgentProcessStatusSummaryResponse(
+        id=uuid4(),
+        name="Labs Reviewer",
+        status="SUCCEEDED",
+        children=[],
+    )
+    parent = AgentProcessStatusSummaryResponse(
+        id=uuid4(),
+        name="Labs Writer",
+        status="SUCCEEDED",
+        children=[child],
+    )
+    return ProcessStatusResponse(
+        id=uuid4(),
+        file="notes.md",
+        created_at=datetime.now(timezone.utc),
+        user_id=USER_ID,
+        data=[parent],
+    )
+
+
+def _agent_process_detail_response() -> AgentProcessStatusDetailResponse:
+    return AgentProcessStatusDetailResponse(
+        id=uuid4(),
+        name="Labs Writer",
+        status="SUCCEEDED",
+        result="MARKDOWN_CONTENT",
+        children=[
+            AgentProcessStatusSummaryResponse(
+                id=uuid4(),
+                name="Labs Reviewer",
+                status="SUCCEEDED",
+                children=[],
+            )
+        ],
+    )
 
 
 class _ServiceStub:
-    def __init__(self, process_status: ProcessStatus | None) -> None:
-        self.process_status = process_status
-        self.calls: list[tuple[UUID, UUID]] = []
+    def __init__(
+        self,
+        process_response: ProcessStatusResponse | None = None,
+        agent_response: AgentProcessStatusDetailResponse | None = None,
+    ) -> None:
+        self.process_response = process_response
+        self.agent_response = agent_response
+        self.process_calls: list[tuple[UUID, UUID]] = []
+        self.agent_calls: list[tuple[UUID, UUID]] = []
 
-    async def get_process_status(self, *, process_id: UUID, user_id: UUID):
-        self.calls.append((process_id, user_id))
-        if self.process_status is None:
-            return None
-        if self.process_status.id == process_id and self.process_status.user_id == user_id:
-            return self.process_status
-        return None
+    async def get_process_with_agent_processes(self, *, process_id: UUID, user_id: UUID):
+        self.process_calls.append((process_id, user_id))
+        return self.process_response
 
-    def build_status_response(self, process_status: ProcessStatus) -> ProcessStatusResponse:
-        return ProcessStatusResponse.from_process_status(process_status)
+    async def get_agent_process_with_children(
+        self,
+        *,
+        agent_process_id: UUID,
+        user_id: UUID,
+    ):
+        self.agent_calls.append((agent_process_id, user_id))
+        return self.agent_response
 
 
 def _app(user_id: UUID | None = USER_ID) -> FastAPI:
     app = FastAPI()
     if user_id is not None:
+
         async def _current_user_override() -> AuthenticatedUser:
             return AuthenticatedUser(
                 id=str(user_id),
@@ -58,6 +97,7 @@ def _app(user_id: UUID | None = USER_ID) -> FastAPI:
 
         app.dependency_overrides[get_current_user] = _current_user_override
     app.include_router(process_status_router.router)
+    app.include_router(process_status_router.agent_process_router)
     return app
 
 
@@ -68,7 +108,7 @@ async def _get(app: FastAPI, path: str) -> httpx.Response:
 
 
 def test_status_endpoint_requires_authorization(monkeypatch) -> None:
-    monkeypatch.setattr(process_status_router, "service", _ServiceStub(None))
+    monkeypatch.setattr(process_status_router, "service", _ServiceStub())
 
     response = anyio.run(_get, _app(user_id=None), f"/labs/processes/{uuid4()}/status")
 
@@ -76,38 +116,21 @@ def test_status_endpoint_requires_authorization(monkeypatch) -> None:
 
 
 def test_status_endpoint_returns_404_for_missing_process(monkeypatch) -> None:
-    monkeypatch.setattr(process_status_router, "service", _ServiceStub(None))
+    monkeypatch.setattr(process_status_router, "service", _ServiceStub())
 
     response = anyio.run(_get, _app(), f"/labs/processes/{uuid4()}/status")
 
     assert response.status_code == 404
 
 
-def test_status_endpoint_returns_owned_process_without_result(monkeypatch) -> None:
-    process_status = _process_status(
-        data=[
-            AgentStatus(
-                name="Labs Writer",
-                status="SUCCEEDED",
-                result="final markdown",
-                children=[
-                    AgentStatus(
-                        name="Labs Reviewer",
-                        status="SUCCEEDED",
-                        result="review result",
-                    )
-                ],
-            )
-        ],
+def test_status_endpoint_returns_process_without_result(monkeypatch) -> None:
+    monkeypatch.setattr(
+        process_status_router,
+        "service",
+        _ServiceStub(process_response=_process_status_response()),
     )
-    stub = _ServiceStub(process_status)
-    monkeypatch.setattr(process_status_router, "service", stub)
 
-    response = anyio.run(
-        _get,
-        _app(),
-        f"/labs/processes/{process_status.id}/status",
-    )
+    response = anyio.run(_get, _app(), f"/labs/processes/{uuid4()}/status")
 
     assert response.status_code == 200
     payload = response.json()
@@ -118,14 +141,24 @@ def test_status_endpoint_returns_owned_process_without_result(monkeypatch) -> No
     assert "result" not in payload["data"][0]["children"][0]
 
 
-def test_status_endpoint_does_not_return_other_users_process(monkeypatch) -> None:
-    process_status = _process_status(user_id=OTHER_USER_ID)
-    monkeypatch.setattr(process_status_router, "service", _ServiceStub(process_status))
-
-    response = anyio.run(
-        _get,
-        _app(user_id=USER_ID),
-        f"/labs/processes/{process_status.id}/status",
+def test_agent_process_endpoint_returns_detail_with_result(monkeypatch) -> None:
+    monkeypatch.setattr(
+        process_status_router,
+        "service",
+        _ServiceStub(agent_response=_agent_process_detail_response()),
     )
+
+    response = anyio.run(_get, _app(), f"/labs/agent-process/{uuid4()}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result"] == "MARKDOWN_CONTENT"
+    assert "result" not in payload["children"][0]
+
+
+def test_agent_process_endpoint_returns_404_for_missing_agent_process(monkeypatch) -> None:
+    monkeypatch.setattr(process_status_router, "service", _ServiceStub())
+
+    response = anyio.run(_get, _app(), f"/labs/agent-process/{uuid4()}")
 
     assert response.status_code == 404

@@ -3,6 +3,8 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 
 from core.auth.dependencies import get_current_user
+from core.auth.schemas import AuthenticatedUser
+from core.auth.service import parse_user_id
 from labs.agents.service import LabPostService
 
 router = APIRouter(
@@ -22,6 +24,7 @@ service = LabPostService()
 async def review(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, str]:
     """Transform markdown notes into a structured blog post."""
     raw_content = await file.read()
@@ -30,10 +33,11 @@ async def review(
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.") from exc
 
-    return service.enqueue_markdown_organization(
+    return await service.enqueue_markdown_organization(
         background_tasks=background_tasks,
         filename=file.filename or "",
         context=context,
+        user_id=parse_user_id(user),
     )
 
 

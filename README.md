@@ -98,6 +98,7 @@ Example response:
 ```json
 {
   "message": "Processing started.",
+  "process_id": "00000000-0000-0000-0000-000000000001",
   "output_file": "/path/to/public/markdown/notes_reviewd.md"
 }
 ```
@@ -128,6 +129,10 @@ curl http://127.0.0.1:3015/outputs/pdf
 ### `GET /labs/processes/{process_id}/status`
 
 Returns persisted process status metadata for the authenticated user. Agent `result` values are stored internally but excluded from this response.
+
+### `GET /labs/agent-process/{agent_process_id}`
+
+Returns one agent process status for the authenticated user, including its stored `result` content.
 
 ## Tests
 

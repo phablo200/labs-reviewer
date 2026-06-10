@@ -2,32 +2,33 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
 from beanie import Document
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-AgentStatusState = Literal["IN_PROGRESS", "FAILED", "SUCCEEDED"]
+from core.utils.datetime import utc_now
 
-
-def utc_now() -> datetime:
-    """Return a timezone-aware UTC timestamp."""
-    return datetime.now(timezone.utc)
+AgentProcessStatusState = Literal["IN_PROGRESS", "FAILED", "SUCCEEDED"]
 
 
-class AgentStatus(BaseModel):
-    """Persisted status for a workflow agent or nested sub-agent."""
+class AgentProcessStatus(Document):
+    """Persisted status for one workflow agent invocation."""
 
     id: UUID = Field(default_factory=uuid4)
+    process_status_id: UUID
+    parent_agent_process_status_id: UUID | None = None
     name: str
-    status: AgentStatusState
+    status: AgentProcessStatusState
     loop_from: int | None = None
     loop_to: int | None = None
     finished_at: datetime | None = None
     result: str | None = None
-    children: list[AgentStatus] = Field(default_factory=list)
+
+    class Settings:
+        name = "agent_process_status"
 
 
 class ProcessStatus(Document):
@@ -37,7 +38,6 @@ class ProcessStatus(Document):
     file: str
     created_at: datetime = Field(default_factory=utc_now)
     user_id: UUID
-    data: list[AgentStatus] = Field(default_factory=list)
 
     class Settings:
         name = "process_status"

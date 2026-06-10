@@ -223,10 +223,9 @@ Deliverable:
 
 ## Phase 7: Workflow Context
 
-Recommended files:
+Recommended file:
 
 ```text
-labs/process_status/context.py
 labs/process_status/proxy.py
 ```
 
