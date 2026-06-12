@@ -10,9 +10,10 @@ import labs.process_status.repository as repository_module
 
 
 class _FakeProcessStatus:
-    def __init__(self, *, file, user_id):
+    def __init__(self, *, file, user_id, status="IN_PROGRESS"):
         self.id = uuid4()
         self.file = file
+        self.status = status
         self.user_id = user_id
         self.inserted = False
         self.saved = False
@@ -71,6 +72,7 @@ def test_process_repository_create_inserts_process_status(monkeypatch) -> None:
 
     assert process_status.inserted is True
     assert process_status.file == "notes.md"
+    assert process_status.status == "IN_PROGRESS"
     assert process_status.user_id == user_id
 
 

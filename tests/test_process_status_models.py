@@ -13,6 +13,7 @@ def _process_status(**kwargs) -> ProcessStatus:
     values = {
         "id": uuid4(),
         "file": "notes.md",
+        "status": "IN_PROGRESS",
         "created_at": datetime.now(timezone.utc),
         "user_id": uuid4(),
     }
@@ -60,7 +61,18 @@ def test_process_status_uses_expected_collection_name_and_file() -> None:
 
     assert ProcessStatus.Settings.name == "process_status"
     assert process_status.file == "notes.md"
+    assert process_status.status == "IN_PROGRESS"
     assert not hasattr(process_status, "data")
+
+
+def test_process_status_defaults_to_in_progress() -> None:
+    process_status = ProcessStatus.model_construct(
+        id=uuid4(),
+        file="notes.md",
+        user_id=uuid4(),
+    )
+
+    assert process_status.status == "IN_PROGRESS"
 
 
 def test_process_status_response_excludes_result_recursively() -> None:
@@ -90,6 +102,7 @@ def test_process_status_response_excludes_result_recursively() -> None:
     assert "result" not in payload["data"][0]
     assert "result" not in payload["data"][0]["children"][0]
     assert payload["file"] == "notes.md"
+    assert payload["status"] == "IN_PROGRESS"
     assert payload["data"][0]["children"][0]["name"] == "Labs Reviewer"
 
 

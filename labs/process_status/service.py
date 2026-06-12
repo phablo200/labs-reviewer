@@ -8,6 +8,7 @@ from labs.process_status.models import (
     AgentProcessStatus,
     AgentProcessStatusState,
     ProcessStatus,
+    ProcessStatusState,
 )
 from labs.process_status.repository import (
     AgentProcessStatusRepository,
@@ -95,12 +96,14 @@ class ProcessStatusService:
         status: AgentProcessStatusState,
         result: str | None = None,
     ) -> AgentProcessStatus:
-        return await self.agent_repository.update_status(
+        updated_agent_process_status = await self.agent_repository.update_status(
             agent_process_status=agent_process_status,
             status=status,
             finished_at=utc_now(),
             result=result,
         )
+        await self._sync_process_status(updated_agent_process_status.process_status_id)
+        return updated_agent_process_status
 
     async def get_process_status(
         self,
@@ -158,6 +161,21 @@ class ProcessStatusService:
     async def save_process_status(self, process_status: ProcessStatus) -> ProcessStatus:
         return await self.repository.save(process_status)
 
+    async def _sync_process_status(self, process_status_id: UUID) -> ProcessStatus | None:
+        agent_processes = await self.agent_repository.list_by_process_status_id(
+            process_status_id
+        )
+        status = self._derive_process_status(agent_processes)
+        process_status = await self.repository.get_by_process_id(process_status_id)
+        if process_status is None:
+            return None
+
+        if process_status.status == status:
+            return process_status
+
+        process_status.status = status
+        return await self.repository.save(process_status)
+
     def build_status_response(
         self,
         process_status: ProcessStatus,
@@ -167,6 +185,20 @@ class ProcessStatusService:
         children_by_parent = self._group_children(agent_processes)
         data = self._build_summary_children(None, children_by_parent)
         return ProcessStatusResponse.from_process_status(process_status, data=data)
+
+    @staticmethod
+    def _derive_process_status(
+        agent_processes: list[AgentProcessStatus],
+    ) -> ProcessStatusState:
+        if not agent_processes:
+            return "IN_PROGRESS"
+
+        statuses = [agent_process.status for agent_process in agent_processes]
+        if "FAILED" in statuses:
+            return "FAILED"
+        if "IN_PROGRESS" in statuses:
+            return "IN_PROGRESS"
+        return "SUCCEEDED"
 
     @staticmethod
     def _group_children(

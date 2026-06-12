@@ -18,9 +18,16 @@ class ProcessStatusRepository:
         file: str,
         user_id: UUID,
     ) -> ProcessStatus:
-        process_status = ProcessStatus(file=file, user_id=user_id)
+        process_status = ProcessStatus(
+            file=file,
+            status="IN_PROGRESS",
+            user_id=user_id,
+        )
         await process_status.insert()
         return process_status
+
+    async def get_by_process_id(self, process_id: UUID) -> ProcessStatus | None:
+        return await ProcessStatus.find_one(ProcessStatus.id == process_id)
 
     async def get_by_id(
         self,

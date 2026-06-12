@@ -35,6 +35,7 @@ def _process_status_response() -> ProcessStatusResponse:
     return ProcessStatusResponse(
         id=uuid4(),
         file="notes.md",
+        status="SUCCEEDED",
         created_at=datetime.now(timezone.utc),
         user_id=USER_ID,
         data=[parent],
@@ -135,6 +136,7 @@ def test_status_endpoint_returns_process_without_result(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["file"] == "notes.md"
+    assert payload["status"] == "SUCCEEDED"
     assert payload["user_id"] == str(USER_ID)
     assert payload["data"][0]["name"] == "Labs Writer"
     assert "result" not in payload["data"][0]

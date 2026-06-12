@@ -11,7 +11,8 @@ from pydantic import Field
 
 from core.utils.datetime import utc_now
 
-AgentProcessStatusState = Literal["IN_PROGRESS", "FAILED", "SUCCEEDED"]
+ProcessStatusState = Literal["IN_PROGRESS", "FAILED", "SUCCEEDED"]
+AgentProcessStatusState = ProcessStatusState
 
 
 class AgentProcessStatus(Document):
@@ -36,6 +37,7 @@ class ProcessStatus(Document):
 
     id: UUID = Field(default_factory=uuid4)
     file: str
+    status: ProcessStatusState = "IN_PROGRESS"
     created_at: datetime = Field(default_factory=utc_now)
     user_id: UUID
 

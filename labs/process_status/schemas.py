@@ -11,6 +11,7 @@ from labs.process_status.models import (
     AgentProcessStatus,
     AgentProcessStatusState,
     ProcessStatus,
+    ProcessStatusState,
 )
 
 
@@ -77,6 +78,7 @@ class ProcessStatusResponse(BaseModel):
 
     id: UUID
     file: str
+    status: ProcessStatusState
     created_at: datetime
     user_id: UUID
     data: list[AgentProcessStatusSummaryResponse] = Field(default_factory=list)
@@ -90,6 +92,7 @@ class ProcessStatusResponse(BaseModel):
         return cls(
             id=process_status.id,
             file=process_status.file,
+            status=process_status.status,
             created_at=process_status.created_at,
             user_id=process_status.user_id,
             data=data or [],
