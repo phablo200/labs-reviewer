@@ -11,6 +11,10 @@ from labs.process_status.models import AgentProcessStatus
 from labs.process_status.service import ProcessStatusService
 
 
+MAX_STATUS_RESULT_CHARS = 500_000
+TRUNCATED_RESULT_NOTICE = "\n\n[Status result truncated.]"
+
+
 @dataclass(frozen=True)
 class AgentProcessContext:
     """Carries process and parent-agent linkage for tracked agent calls."""
@@ -73,18 +77,45 @@ class AgentInvocationProxy:
         try:
             response = method(*args, **kwargs)
         except Exception as exc:
-            self._run_async(
-                self._mark_agent_process_failed(agent_process_status, str(exc))
-            )
+            self._mark_failed(agent_process_status, str(exc))
             raise
 
-        self._run_async(
-            self._mark_agent_process_succeeded(
-                agent_process_status,
-                self._extract_result(response),
-            )
-        )
+        self._mark_succeeded(agent_process_status, self._extract_result(response))
         return response
+
+    def _mark_succeeded(
+        self,
+        agent_process_status: AgentProcessStatus,
+        result: str | None,
+    ) -> None:
+        try:
+            self._run_async(
+                self._mark_agent_process_succeeded(
+                    agent_process_status,
+                    self._truncate_result(result),
+                )
+            )
+        except Exception:
+            self._run_async(
+                self._mark_agent_process_succeeded(agent_process_status, None)
+            )
+
+    def _mark_failed(
+        self,
+        agent_process_status: AgentProcessStatus,
+        result: str | None,
+    ) -> None:
+        try:
+            self._run_async(
+                self._mark_agent_process_failed(
+                    agent_process_status,
+                    self._truncate_result(result),
+                )
+            )
+        except Exception:
+            self._run_async(
+                self._mark_agent_process_failed(agent_process_status, None)
+            )
 
     def _run_async(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
         if self._async_runner is not None:
@@ -138,3 +169,10 @@ class AgentInvocationProxy:
             return str(model_dump_json())
 
         return str(response)
+
+    @staticmethod
+    def _truncate_result(result: str | None) -> str | None:
+        if result is None or len(result) <= MAX_STATUS_RESULT_CHARS:
+            return result
+
+        return result[:MAX_STATUS_RESULT_CHARS] + TRUNCATED_RESULT_NOTICE
