@@ -44,8 +44,8 @@ class LLMConfig:
 
     @staticmethod
     def _build_groq_chat() -> BaseChatModel:
-        model_name = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
-        temperature = float(os.getenv("GROQ_TEMPERATURE", str(DEFAULT_TEMPERATURE)))
+        model_name = LLMConfig._provider_default_model(LLMProvider.GROQ)
+        temperature = LLMConfig._provider_default_temperature(LLMProvider.GROQ)
         api_key = os.getenv("GROQ_API_KEY")
         return ChatGroq(
             model=model_name,
@@ -55,8 +55,8 @@ class LLMConfig:
 
     @staticmethod
     def _build_openai_chat() -> BaseChatModel:
-        model_name = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
-        temperature = float(os.getenv("OPENAI_TEMPERATURE", str(DEFAULT_TEMPERATURE)))
+        model_name = LLMConfig._provider_default_model(LLMProvider.OPENAI)
+        temperature = LLMConfig._provider_default_temperature(LLMProvider.OPENAI)
         api_key = os.getenv("OPENAI_API_KEY")
         return ChatOpenAI(
             model=model_name,
@@ -74,10 +74,17 @@ class LLMConfig:
         return cls.MODEL_BUILDERS[provider]()
 
     @staticmethod
-    def _provider_default_model(provider: LLMProvider) -> str:
+    def _provider_builtin_default_model(provider: LLMProvider) -> str:
         if provider == LLMProvider.OPENAI:
-            return os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
-        return os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
+            return DEFAULT_OPENAI_MODEL
+        return DEFAULT_GROQ_MODEL
+
+    @classmethod
+    def _provider_default_model(cls, provider: LLMProvider) -> str:
+        fallback = cls._provider_builtin_default_model(provider)
+        if provider == LLMProvider.OPENAI:
+            return os.getenv("OPENAI_MODEL", fallback).strip() or fallback
+        return os.getenv("GROQ_MODEL", fallback).strip() or fallback
 
     @staticmethod
     def _provider_default_temperature(provider: LLMProvider) -> float:
@@ -128,7 +135,12 @@ class LLMConfig:
         candidate = role_model or cls._provider_default_model(provider)
         allowed = LLM_MODELS[LLM(provider.value)]
         if candidate not in allowed:
-            fallback = cls._provider_default_model(provider)
+            provider_default = cls._provider_default_model(provider)
+            fallback = (
+                provider_default
+                if provider_default in allowed
+                else cls._provider_builtin_default_model(provider)
+            )
             logger.warning(
                 "llm_config: model '%s' invalid for provider '%s' (role=%s); using '%s'",
                 candidate,

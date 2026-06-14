@@ -1,12 +1,38 @@
 import base64
 import json
 import logging
+import os
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .constants import GITHUB_REPO_URL_PATTERN
 
 AGENT_NAME = "labs_post_writer"
+
+
+def build_code_examples_context(examples_response) -> str:
+    if not examples_response.examples:
+        return ""
+
+    lines = ["## Code Examples Context", examples_response.summary.strip()]
+    for item in examples_response.examples:
+        snippet = item.snippet.strip()
+        if len(snippet) > 1200:
+            snippet = snippet[:1200].rstrip() + "\n..."
+        lines.extend(
+            [
+                f"- Repository: {item.repository}",
+                f"- File: {item.file_path}",
+                f"- Language: {item.language}",
+                f"- Why it matters: {item.why_it_matters}",
+                f"- Integration hint: {item.integration_hint}",
+                "```",
+                snippet,
+                "```",
+                "",
+            ]
+        )
+    return "\n".join(lines).strip()
 
 
 def extract_github_repositories(markdown: str) -> list[tuple[str, str]]:
@@ -21,12 +47,17 @@ def extract_github_repositories(markdown: str) -> list[tuple[str, str]]:
 
 
 def http_get_json(url: str) -> dict:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "mebrain-blog-writer",
+    }
+    github_token = os.getenv("GITHUB_TOKEN", "").strip()
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+
     request = Request(
         url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "mebrain-blog-writer",
-        },
+        headers=headers,
     )
     with urlopen(request, timeout=10) as response:
         payload = response.read().decode("utf-8")

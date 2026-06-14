@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import labs.agents.labs_post_writer.agent as writer_module
 from labs.agents.labs_post_writer.agent import LabPostWriterAgent
+from labs.agents.labs_post_writer.helper import build_code_examples_context
 from labs.agents.labs_post_writer.schema import LabPostWriterRequest
 
 
@@ -66,3 +67,34 @@ def test_organize_notes_includes_code_examples_context(monkeypatch) -> None:
     assert "## Code Examples Context" in first_prompt
     assert "Repository: octocat/hello-world" in first_prompt
     assert "```" in first_prompt
+
+
+def test_build_code_examples_context_formats_and_truncates_snippets() -> None:
+    long_snippet = "x" * 1300
+    examples_response = SimpleNamespace(
+        summary="Useful examples.",
+        examples=[
+            SimpleNamespace(
+                repository="octocat/hello-world",
+                file_path="app/main.py",
+                language="python",
+                snippet=long_snippet,
+                why_it_matters="Shows request handling",
+                integration_hint="Use this when explaining service flow",
+            )
+        ],
+    )
+
+    context = build_code_examples_context(examples_response)
+
+    assert "## Code Examples Context" in context
+    assert "- Repository: octocat/hello-world" in context
+    assert "- File: app/main.py" in context
+    assert "x" * 1200 in context
+    assert "\n..." in context
+
+
+def test_build_code_examples_context_returns_empty_without_examples() -> None:
+    examples_response = SimpleNamespace(summary="No examples.", examples=[])
+
+    assert build_code_examples_context(examples_response) == ""

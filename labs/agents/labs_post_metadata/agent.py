@@ -31,8 +31,9 @@ class LabPostMetadataAgent:
             structured_llm = self.llm.with_structured_output(LabPostMetadataResponse)
             response = structured_llm.invoke(messages)
         except Exception:
+            agent_name = getattr(self, "agent_name", AgentRole.METADATA)
             self.logger.exception(
-                "agent=%s | structured output failed", self.agent_name
+                f"agent={agent_name} | structured output failed"
             )
             return LabPostMetadataResponse()
 
@@ -50,7 +51,8 @@ class LabPostMetadataAgent:
         try:
             return LabPostMetadataResponse.model_validate(response_data)
         except Exception:
+            agent_name = getattr(self, "agent_name", AgentRole.METADATA)
             self.logger.exception(
-                "agent=%s | invalid structured metadata response", self.agent_name
+                f"agent={agent_name} | invalid structured metadata response"
             )
             return LabPostMetadataResponse()

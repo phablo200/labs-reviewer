@@ -2,7 +2,7 @@ from pathlib import Path
 
 from labs.helpers.markdown_helper import MarkdownHelper
 from labs.helpers.pdf_helper import PDFHelper
-from labs.service import LabPostService
+from labs.agents.service import LabPostService
 
 
 def test_list_markdown_files_returns_sorted_markdown_files(tmp_path) -> None:

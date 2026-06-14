@@ -23,21 +23,45 @@ class LabCodeExampleRequest(BaseModel):
 class LabCodeExampleItem(BaseModel):
     """A single repository-backed code example."""
 
-    repository: str = Field(..., description="Repository identifier in owner/repo format.")
-    file_path: str = Field(..., description="Path to the file containing the snippet.")
-    language: str = Field(..., description="Detected language for the snippet.")
-    snippet: str = Field(..., description="Short code snippet extracted from repository files.")
-    why_it_matters: str = Field(..., description="Why this snippet is relevant to the post.")
+    repository: str = Field(
+        ...,
+        min_length=1,
+        description="Repository identifier in owner/repo format copied from the provided repository context.",
+    )
+    file_path: str = Field(
+        ...,
+        min_length=1,
+        description="Exact path from a provided File section containing the snippet.",
+    )
+    language: str = Field(
+        ...,
+        min_length=1,
+        description="Detected language for the snippet, based on the file path or File section language.",
+    )
+    snippet: str = Field(
+        ...,
+        min_length=1,
+        description="Concrete code excerpt copied from the provided File section; do not summarize.",
+    )
+    why_it_matters: str = Field(
+        ...,
+        min_length=1,
+        description="Why this exact snippet helps explain the technical lab.",
+    )
     integration_hint: str = Field(
         ...,
-        description="How the writer should integrate this example into the post narrative.",
+        min_length=1,
+        description="How the writer should integrate this exact snippet into the post narrative.",
     )
 
 
 class LabCodeExampleResponse(BaseModel):
     """Structured response for extracted code examples."""
 
-    examples: list[LabCodeExampleItem] = Field(default_factory=list)
+    examples: list[LabCodeExampleItem] = Field(
+        default_factory=list,
+        description="Concrete repository-backed examples. Use an empty list only when no File sections with code are available.",
+    )
     summary: str = Field(
         default="",
         description="High-level summary of suggested examples.",

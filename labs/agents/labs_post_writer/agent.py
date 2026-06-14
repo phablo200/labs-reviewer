@@ -11,7 +11,7 @@ from labs.agents.labs_reviewer.agent import LabReviewerAgent
 from labs.agents.labs_reviewer.schema import LabReviewerRequest
 from core.llm_config import AgentRole, LLMConfig
 
-from .helper import enrich_context_with_repositories
+from .helper import build_code_examples_context, enrich_context_with_repositories
 from .prompts import LabPostWriterPrompt
 from .schema import LabPostWriterRequest, LabPostWriterResponse
 
@@ -26,31 +26,6 @@ class LabPostWriterAgent:
         self.llm = llm or LLMConfig.build_chat_model_for_agent(AgentRole.POST_WRITER)
         self.blog_reviwer = LabReviewerAgent()
         self.code_example_agent = LabCodeExampleAgent()
-
-    @staticmethod
-    def _build_code_examples_context(examples_response) -> str:
-        if not examples_response.examples:
-            return ""
-
-        lines = ["## Code Examples Context", examples_response.summary.strip()]
-        for item in examples_response.examples:
-            snippet = item.snippet.strip()
-            if len(snippet) > 1200:
-                snippet = snippet[:1200].rstrip() + "\n..."
-            lines.extend(
-                [
-                    f"- Repository: {item.repository}",
-                    f"- File: {item.file_path}",
-                    f"- Language: {item.language}",
-                    f"- Why it matters: {item.why_it_matters}",
-                    f"- Integration hint: {item.integration_hint}",
-                    "```",
-                    snippet,
-                    "```",
-                    "",
-                ]
-            )
-        return "\n".join(lines).strip()
 
     def organize_notes(self, request: LabPostWriterRequest) -> LabPostWriterResponse:
         """Transform raw notes into a reviewed markdown blog post."""
@@ -67,7 +42,7 @@ class LabPostWriterAgent:
                 "agent=%s | code example warning: %s", self.agent_name, warning
             )
 
-        code_examples_context = self._build_code_examples_context(examples_response)
+        code_examples_context = build_code_examples_context(examples_response)
         final_context = enriched_context
         if code_examples_context:
             final_context = f"{enriched_context}\n\n{code_examples_context}"
@@ -123,22 +98,12 @@ class LabPostWriterAgent:
                 )
                 break
 
-            improvement_prompt = (
-                "You are improving a blog post after editorial review.\n\n"
-                "Apply all relevant corrections and suggestions while preserving the intent.\n\n"
-                "If repository-based code examples exist, keep at least one concrete example "
-                "and improve technical accuracy of the explanation.\n\n"
-                "Current post:\n"
-                f"{current_markdown}\n\n"
-                "Editor revised version:\n"
-                f"{revised.revised_post}\n\n"
-                "Errors found:\n"
-                + "\n".join(f"- {item}" for item in revised.errors_found)
-                + "\n\nImprovement tips:\n"
-                + "\n".join(f"- {item}" for item in revised.improvement_tips)
-                + "\n\nNext revision checklist:\n"
-                + "\n".join(f"- {item}" for item in revised.next_revision_checklist)
-                + "\n\nReturn only the final improved post in Markdown."
+            improvement_prompt = LabPostWriterPrompt.build_improvement_prompt(
+                current_markdown=current_markdown,
+                revised_post=revised.revised_post,
+                errors_found=revised.errors_found,
+                improvement_tips=revised.improvement_tips,
+                next_revision_checklist=revised.next_revision_checklist,
             )
 
             self.logger.info(
