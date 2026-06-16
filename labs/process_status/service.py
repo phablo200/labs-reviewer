@@ -113,6 +113,23 @@ class ProcessStatusService:
     ) -> ProcessStatus | None:
         return await self.repository.get_by_id(process_id=process_id, user_id=user_id)
 
+    async def list_process_statuses(
+        self,
+        *,
+        user_id: UUID,
+        term: str | None = None,
+        limit: int = 100,
+    ) -> list[ProcessStatusResponse]:
+        process_statuses = await self.repository.list_by_user_id(
+            user_id=user_id,
+            term=term,
+            limit=limit,
+        )
+        return [
+            ProcessStatusResponse.from_process_status(process_status)
+            for process_status in process_statuses
+        ]
+
     async def get_process_with_agent_processes(
         self,
         *,

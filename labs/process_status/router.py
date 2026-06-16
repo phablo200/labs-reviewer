@@ -21,6 +21,15 @@ agent_process_router = APIRouter(
 service = ProcessStatusService()
 
 
+@router.get("/", response_model=list[ProcessStatusResponse])
+async def list_process_statuses(
+    term: str | None = None,
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> list[ProcessStatusResponse]:
+    """Return the latest process statuses for the authenticated user."""
+    return await service.list_process_statuses(user_id=parse_user_id(user), term=term)
+
+
 @router.get("/{process_id}/status", response_model=ProcessStatusResponse)
 async def get_process_status(
     process_id: UUID,

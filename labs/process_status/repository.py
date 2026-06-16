@@ -1,6 +1,9 @@
 """Persistence operations for process status documents."""
 
+import re
 from uuid import UUID
+
+from beanie.operators import RegEx
 
 from labs.process_status.models import (
     AgentProcessStatus,
@@ -38,6 +41,25 @@ class ProcessStatusRepository:
         return await ProcessStatus.find_one(
             ProcessStatus.id == process_id,
             ProcessStatus.user_id == user_id,
+        )
+
+    async def list_by_user_id(
+        self,
+        *,
+        user_id: UUID,
+        term: str | None = None,
+        limit: int = 100,
+    ) -> list[ProcessStatus]:
+        filters = [ProcessStatus.user_id == user_id]
+        normalized_term = term.strip() if term is not None else ""
+        if normalized_term:
+            filters.append(RegEx("file", re.escape(normalized_term), "i"))
+
+        return await (
+            ProcessStatus.find(*filters)
+            .sort("-created_at")
+            .limit(limit)
+            .to_list()
         )
 
     async def save(self, process_status: ProcessStatus) -> ProcessStatus:

@@ -27,6 +27,46 @@ class _FakeProcessStatus:
         return self
 
 
+class _ComparableField:
+    def __init__(self, name):
+        self.name = name
+
+    def __eq__(self, value):
+        return self.name, value
+
+
+class _FakeProcessStatusQuery:
+    def __init__(self, results):
+        self.results = results
+        self.sort_value = None
+        self.limit_value = None
+
+    def sort(self, value):
+        self.sort_value = value
+        return self
+
+    def limit(self, value):
+        self.limit_value = value
+        return self
+
+    async def to_list(self):
+        return self.results
+
+
+class _FakeProcessStatusFinder:
+    user_id = _ComparableField("user_id")
+    find_expressions = None
+    query = None
+
+    @classmethod
+    def find(cls, *expressions):
+        cls.find_expressions = expressions
+        cls.query = _FakeProcessStatusQuery(
+            [_FakeProcessStatus(file="notes.md", user_id=uuid4())]
+        )
+        return cls.query
+
+
 class _FakeAgentProcessStatus:
     def __init__(
         self,
@@ -87,6 +127,43 @@ def test_process_repository_save_persists_process_status() -> None:
 
     assert result is process_status
     assert process_status.saved is True
+
+
+def test_process_repository_lists_latest_processes_by_user(monkeypatch) -> None:
+    monkeypatch.setattr(repository_module, "ProcessStatus", _FakeProcessStatusFinder)
+    repository = ProcessStatusRepository()
+    user_id = uuid4()
+
+    async def _list():
+        return await repository.list_by_user_id(user_id=user_id)
+
+    result = anyio.run(_list)
+
+    assert result == _FakeProcessStatusFinder.query.results
+    assert _FakeProcessStatusFinder.find_expressions == (("user_id", user_id),)
+    assert _FakeProcessStatusFinder.query.sort_value == "-created_at"
+    assert _FakeProcessStatusFinder.query.limit_value == 100
+
+
+def test_process_repository_filters_processes_by_file_term(monkeypatch) -> None:
+    monkeypatch.setattr(repository_module, "ProcessStatus", _FakeProcessStatusFinder)
+    repository = ProcessStatusRepository()
+    user_id = uuid4()
+
+    async def _list():
+        return await repository.list_by_user_id(user_id=user_id, term="notes.md")
+
+    anyio.run(_list)
+
+    user_filter, term_filter = _FakeProcessStatusFinder.find_expressions
+    assert user_filter == ("user_id", user_id)
+    assert term_filter.query == {
+        "file": {
+            "$regex": "notes\\.md",
+            "$options": "i",
+        }
+    }
+    assert _FakeProcessStatusFinder.query.limit_value == 100
 
 
 def test_agent_repository_create_inserts_agent_process_status(monkeypatch) -> None:

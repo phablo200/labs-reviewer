@@ -40,10 +40,16 @@ class _ProcessRepositoryStub:
         self.created: ProcessStatus | None = None
         self.saved: ProcessStatus | None = None
         self.process_status = _process_status()
+        self.process_statuses: list[ProcessStatus] = []
+        self.list_call: tuple[object, object, int] | None = None
 
     async def create(self, *, file, user_id):
         self.created = _process_status(file=file, user_id=user_id)
         return self.created
+
+    async def list_by_user_id(self, *, user_id, term=None, limit=100):
+        self.list_call = (user_id, term, limit)
+        return self.process_statuses
 
     async def get_by_id(self, *, process_id, user_id):
         if self.process_status.id == process_id and self.process_status.user_id == user_id:
@@ -163,6 +169,45 @@ def test_service_get_process_status_is_user_scoped() -> None:
 
     assert found is repository.process_status
     assert missing is None
+
+
+def test_service_lists_latest_process_statuses_for_user() -> None:
+    repository = _ProcessRepositoryStub()
+    first = _process_status(file="first.md", user_id=repository.process_status.user_id)
+    second = _process_status(file="second.md", user_id=repository.process_status.user_id)
+    repository.process_statuses = [first, second]
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+    )
+
+    async def _list():
+        return await service.list_process_statuses(user_id=repository.process_status.user_id)
+
+    response = anyio.run(_list)
+    payload = [item.model_dump() for item in response]
+
+    assert repository.list_call == (repository.process_status.user_id, None, 100)
+    assert [item["file"] for item in payload] == ["first.md", "second.md"]
+    assert payload[0]["data"] == []
+
+
+def test_service_passes_search_term_to_process_repository() -> None:
+    repository = _ProcessRepositoryStub()
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+    )
+
+    async def _list():
+        return await service.list_process_statuses(
+            user_id=repository.process_status.user_id,
+            term="notes",
+        )
+
+    anyio.run(_list)
+
+    assert repository.list_call == (repository.process_status.user_id, "notes", 100)
 
 
 def test_service_build_status_response_excludes_result_and_builds_tree() -> None:

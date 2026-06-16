@@ -64,11 +64,18 @@ class _ServiceStub:
         self,
         process_response: ProcessStatusResponse | None = None,
         agent_response: AgentProcessStatusDetailResponse | None = None,
+        process_list_response: list[ProcessStatusResponse] | None = None,
     ) -> None:
         self.process_response = process_response
         self.agent_response = agent_response
+        self.process_list_response = process_list_response or []
+        self.list_calls: list[tuple[UUID, str | None]] = []
         self.process_calls: list[tuple[UUID, UUID]] = []
         self.agent_calls: list[tuple[UUID, UUID]] = []
+
+    async def list_process_statuses(self, *, user_id: UUID, term: str | None = None):
+        self.list_calls.append((user_id, term))
+        return self.process_list_response
 
     async def get_process_with_agent_processes(self, *, process_id: UUID, user_id: UUID):
         self.process_calls.append((process_id, user_id))
@@ -114,6 +121,30 @@ def test_status_endpoint_requires_authorization(monkeypatch) -> None:
     response = anyio.run(_get, _app(user_id=None), f"/labs/processes/{uuid4()}/status")
 
     assert response.status_code == 401
+
+
+def test_list_endpoint_returns_latest_processes_for_authenticated_user(monkeypatch) -> None:
+    service = _ServiceStub(process_list_response=[_process_status_response()])
+    monkeypatch.setattr(process_status_router, "service", service)
+
+    response = anyio.run(_get, _app(), "/labs/processes/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["file"] == "notes.md"
+    assert payload[0]["user_id"] == str(USER_ID)
+    assert payload[0]["data"][0]["name"] == "Labs Writer"
+    assert service.list_calls == [(USER_ID, None)]
+
+
+def test_list_endpoint_passes_term_query_to_service(monkeypatch) -> None:
+    service = _ServiceStub(process_list_response=[_process_status_response()])
+    monkeypatch.setattr(process_status_router, "service", service)
+
+    response = anyio.run(_get, _app(), "/labs/processes/?term=notes")
+
+    assert response.status_code == 200
+    assert service.list_calls == [(USER_ID, "notes")]
 
 
 def test_status_endpoint_returns_404_for_missing_process(monkeypatch) -> None:
