@@ -1,45 +1,38 @@
 """Service layer for blog post writing and revision workflows."""
 
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from fastapi import BackgroundTasks, HTTPException
 
-from core.llm_config import AgentRole, LLMConfig
-from labs.agents.labs_code_example.agent import LabCodeExampleAgent
-from labs.agents.labs_post_metadata.agent import LabPostMetadataAgent
-from labs.agents.labs_post_writer.agent import LabPostWriterAgent
-from labs.agents.labs_post_translator.agent import LabPostTranslatorAgent
-from labs.agents.labs_reviewer.agent import LabReviewerAgent
 from labs.agents.labs_reviewer.schema import LabReviewerRequest, LabReviewerResponse
 from labs.agents.contants import PUBLIC_MARKDOWN_DIR, PUBLIC_PDF_DIR
 from labs.helpers.markdown_helper import MarkdownHelper
 from labs.helpers.pdf_helper import PDFHelper
-from labs.process_status.service import ProcessStatusService
-from pathlib import Path
+from labs.tasks.dependencies import build_markdown_processing_dependencies
+from labs.tasks.factory import build_markdown_dispatcher
+from labs.tasks.markdown_jobs import MarkdownOrganizationJob, TaskDispatchEnqueueError
 
 
 class LabPostService:
     """Orchestrates blog post generation/revision and file output."""
 
     def __init__(self) -> None:
-        reviewer_llm = LLMConfig.build_chat_model_for_agent(AgentRole.REVIEWER)
-        code_example_llm = LLMConfig.build_chat_model_for_agent(AgentRole.CODE_EXAMPLE)
-        writer_llm = LLMConfig.build_chat_model_for_agent(AgentRole.POST_WRITER)
-        metadata_llm = LLMConfig.build_chat_model_for_agent(AgentRole.METADATA)
-        translator_llm = LLMConfig.build_chat_model_for_agent(AgentRole.TRANSLATOR)
-
-        reviewer_agent = LabReviewerAgent(llm=reviewer_llm)
-        code_example_agent = LabCodeExampleAgent(llm=code_example_llm)
-        self.writer_agent = LabPostWriterAgent(llm=writer_llm)
-        self.writer_agent.blog_reviwer = reviewer_agent
-        self.writer_agent.code_example_agent = code_example_agent
-        self.translator_agent = LabPostTranslatorAgent(llm=translator_llm)
-        self.metadata_agent = LabPostMetadataAgent(llm=metadata_llm)
-        self.reviewer_agent = reviewer_agent
+        dependencies = build_markdown_processing_dependencies()
+        self.writer_agent = dependencies.writer_agent
+        self.translator_agent = dependencies.translator_agent
+        self.metadata_agent = dependencies.metadata_agent
+        self.reviewer_agent = dependencies.reviewer_agent
         self.markdown_output_dir = PUBLIC_MARKDOWN_DIR
         self.pdf_output_dir = PUBLIC_PDF_DIR
-        self.process_status_service = ProcessStatusService()
+        self.process_status_service = dependencies.process_status_service
+        self.markdown_dispatcher = build_markdown_dispatcher(
+            writer_agent=self.writer_agent,
+            translator_agent=self.translator_agent,
+            metadata_agent=self.metadata_agent,
+            process_status_service=self.process_status_service,
+        )
 
     async def enqueue_markdown_organization(
         self,
@@ -64,16 +57,21 @@ class LabPostService:
             file=filename,
             user_id=user_id,
         )
-        background_tasks.add_task(
-            MarkdownHelper.process_and_save_markdown_with_status,
-            context,
-            output_path,
-            self.writer_agent,
-            self.translator_agent,
-            self.metadata_agent,
-            process_status.id,
-            self.process_status_service,
+        job = MarkdownOrganizationJob(
+            context=context,
+            output_path=output_path,
+            process_status_id=process_status.id,
         )
+        try:
+            await self.markdown_dispatcher.enqueue(
+                job=job,
+                background_tasks=background_tasks,
+            )
+        except TaskDispatchEnqueueError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Failed to enqueue markdown processing job.",
+            ) from exc
 
         return {
             "message": "Processing started.",

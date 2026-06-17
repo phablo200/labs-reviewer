@@ -54,6 +54,29 @@ not present in the repository. No file with that name was found under the
 workspace, so this spec is based on the available research note and current
 code.
 
+## Resolved Decisions
+
+- `CELERY_RESULT_BACKEND` is required in Celery mode. MongoDB process status
+  remains the user-facing source of truth, but Celery should still persist task
+  result metadata for operational robustness.
+- The Celery task should return a small JSON-serializable operational result,
+  such as `process_status_id`, `output_path`, and `status`, so the result
+  backend stores meaningful task completion data. Do not store generated content
+  in the Celery result backend.
+- Failed Celery enqueue attempts should return an API error before the client
+  receives a `process_id`. Enqueueing is a prerequisite for accepting the
+  request in Celery mode.
+- The first Celery implementation should not use `acks_late=True`. Duplicate
+  execution protection should be added first through idempotency or
+  `process_status_id` guards.
+- The local development stack should add Docker Compose services for the API,
+  Redis, MongoDB, and the Celery worker in the same implementation milestone.
+- Docker Compose should make all required local services available through one
+  `docker compose up` flow.
+- The Celery task result should contain only operational tracking metadata.
+  Generated Markdown/PDF outputs and detailed process data remain in MongoDB and
+  the existing output folders.
+
 ## Scope
 
 ### In Scope
@@ -67,11 +90,14 @@ code.
 - Add Celery and Redis Python dependencies.
 - Add a Celery app configured from `core.config.settings`.
 - Add a Celery task for Markdown organization.
+- Store Celery task results through the configured result backend.
 - Add a worker-side dependency builder so Celery workers construct their own
   agents and services.
 - Update `LabPostService` to depend on the dispatcher contract.
 - Keep `POST /labs/review` response shape unchanged.
 - Add unit and integration tests for strategy selection and service delegation.
+- Add a root Docker Compose file with API, Redis, MongoDB, and Celery worker
+  services.
 - Document how to run API, Redis, and Celery locally.
 
 ### Out of Scope
@@ -81,6 +107,7 @@ code.
 - Changing process status endpoint contracts.
 - Adding periodic jobs or Celery Beat.
 - Adding a production Redis deployment manifest.
+- Migrating production MongoDB data.
 - Adding distributed tracing.
 - Adding broad automatic Celery retries in the first implementation.
 - Splitting each nested agent invocation into its own Celery task.
@@ -118,7 +145,8 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/1
 ```
 
 `background_tasks` is the default because it preserves the current version.
-`celery` requires Redis and a separate Celery worker.
+`celery` requires Redis, a separate Celery worker, and a configured
+`CELERY_RESULT_BACKEND`.
 
 `core/config.py` should expose:
 
@@ -262,11 +290,18 @@ celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
+    task_ignore_result=False,
+    task_store_errors_even_if_ignored=True,
     timezone="UTC",
     enable_utc=True,
     imports=("labs.tasks.celery_tasks",),
 )
 ```
+
+The result backend should be configured in every Celery environment. Application
+status endpoints should still read from MongoDB `ProcessStatus` records, but
+Celery result storage gives operators a broker-native record of task completion,
+failure, and tracebacks.
 
 ### Worker Dependencies
 
@@ -318,7 +353,7 @@ def process_markdown_job(
     context: str,
     output_path: str,
     process_status_id: str,
-) -> None:
+) -> dict[str, str]:
     dependencies = build_markdown_processing_dependencies()
     anyio.run(
         MarkdownHelper.process_and_save_markdown_with_status,
@@ -330,7 +365,16 @@ def process_markdown_job(
         UUID(process_status_id),
         dependencies.process_status_service,
     )
+    return {
+        "process_status_id": process_status_id,
+        "output_path": output_path,
+        "status": "completed",
+    }
 ```
+
+Do not add `acks_late=True` in the first Celery implementation. Add duplicate
+execution protection first, then revisit late acknowledgements in a later
+milestone.
 
 ### Dispatcher Factory
 
@@ -409,7 +453,82 @@ redis>=5.0.0,<6.0.0
 ```
 
 Application code should not call Redis directly in this milestone. Redis is the
-Celery broker and optional result backend.
+Celery broker and required result backend in Celery mode.
+
+### Docker Compose
+
+There is currently a root `Dockerfile` that builds the FastAPI service image and
+runs Uvicorn on container port `80`:
+
+```dockerfile
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
+```
+
+The Celery implementation should add a root `docker-compose.yaml` that reuses
+that image for both the API and worker, adds Redis as the broker/result backend,
+and adds MongoDB for local process status persistence:
+
+```yaml
+services:
+  api:
+    build: .
+    env_file:
+      - .env
+    environment:
+      TASK_DISPATCHER: celery
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: labs_reviewer
+    ports:
+      - "3015:80"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+
+  worker:
+    build: .
+    env_file:
+      - .env
+    command: celery -A labs.tasks.celery_app.celery_app worker --loglevel=info
+    environment:
+      TASK_DISPATCHER: celery
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: labs_reviewer
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+volumes:
+  mongodb_data:
+```
+
+Do not add this Compose file before Celery dependencies and `labs/tasks/*`
+modules exist, because the worker command will fail until those files are
+implemented.
 
 ### Runtime Commands
 
@@ -419,12 +538,18 @@ Current mode:
 TASK_DISPATCHER=background_tasks uvicorn main:app --reload --host 0.0.0.0 --port 3015
 ```
 
-Celery mode:
+Celery mode without Compose:
 
 ```bash
 redis-server
 TASK_DISPATCHER=celery uvicorn main:app --reload --host 0.0.0.0 --port 3015
 celery -A labs.tasks.celery_app.celery_app worker --loglevel=info
+```
+
+Celery mode with Compose after the Celery implementation exists:
+
+```bash
+docker compose up --build api worker redis mongodb
 ```
 
 ## Milestones
@@ -451,16 +576,29 @@ celery -A labs.tasks.celery_app.celery_app worker --loglevel=info
    - Create `labs/tasks/dependencies.py`.
    - Create `labs/tasks/celery_tasks.py`.
    - Create `labs/tasks/celery_dispatcher.py`.
+   - Make the task return a small JSON-serializable result for
+     `CELERY_RESULT_BACKEND`.
+   - Do not use `acks_late=True` in this milestone.
 
 5. Add factory selection.
    - Create `labs/tasks/factory.py`.
    - Support `background_tasks` and `celery`.
    - Raise a configuration error for unsupported values.
 
-6. Validate both modes.
+6. Add local Docker Compose services.
+   - Add `docker-compose.yaml`.
+   - Add `api`, `worker`, `redis`, and `mongodb` services.
+   - Reuse the existing root `Dockerfile` for both Python services.
+   - Configure Compose Redis URLs with `redis://redis:6379/0` and
+     `redis://redis:6379/1`.
+   - Configure Compose MongoDB with `MONGODB_URI=mongodb://mongodb:27017` and
+     `MONGODB_DATABASE=labs_reviewer`.
+
+7. Validate both modes.
    - Run unit and integration tests.
    - Manually verify `TASK_DISPATCHER=background_tasks`.
    - Manually verify `TASK_DISPATCHER=celery` with Redis and a worker.
+   - Manually verify `docker compose up --build api worker redis mongodb`.
 
 ## Edge Cases
 
@@ -470,9 +608,15 @@ celery -A labs.tasks.celery_app.celery_app worker --loglevel=info
   error.
 - Celery strategy should ignore `BackgroundTasks`.
 - Celery payload must stay JSON-serializable.
+- Celery task result must stay JSON-serializable.
+- Celery task result should include operational metadata only, not generated
+  Markdown/PDF content.
 - Invalid `process_status_id` in a Celery task should fail the task instead of
   creating a new process.
-- Redis unavailable in `celery` mode should fail enqueueing visibly.
+- Missing `CELERY_RESULT_BACKEND` in `celery` mode should fail configuration
+  because task result storage is required.
+- Redis unavailable in `celery` mode should make enqueueing fail before the API
+  returns a `process_id`.
 - Worker process must initialize the same environment variables as the API.
 - Existing output path behavior, including the current `_reviewd.md` suffix,
   should not change in this implementation.
@@ -485,14 +629,23 @@ celery -A labs.tasks.celery_app.celery_app worker --loglevel=info
       response contract.
 - [ ] `TASK_DISPATCHER=celery` enqueues the same Markdown processing job to
       Celery.
+- [ ] Celery mode requires `CELERY_RESULT_BACKEND`.
+- [ ] Celery tasks return a JSON-serializable result stored by the result
+      backend.
+- [ ] Celery task results contain only operational metadata.
+- [ ] Failed Celery enqueue attempts return an API error before the client
+      receives a `process_id`.
 - [ ] `ProcessStatus` creation remains in the API service before enqueueing.
 - [ ] Celery task arguments are strings or other JSON-serializable primitives.
 - [ ] Celery worker constructs its own agents and process status service.
+- [ ] The first Celery task implementation does not use `acks_late=True`.
 - [ ] `LabPostService` no longer calls `background_tasks.add_task(...)`
       directly.
 - [ ] Unsupported dispatcher values produce a clear configuration error.
 - [ ] `.env.example` documents the task dispatch settings.
 - [ ] Local `.env` defaults to `TASK_DISPATCHER=background_tasks`.
+- [ ] `docker-compose.yaml` defines `api`, `worker`, `redis`, and `mongodb`
+      services.
 - [ ] Existing service tests pass.
 - [ ] New tests cover dispatcher strategies, factory selection, and service
       delegation.
@@ -507,6 +660,8 @@ Unit:
   missing.
 - `CeleryMarkdownDispatcher` calls `process_markdown_job.delay(...)` with
   `context`, string `output_path`, and string `process_status_id`.
+- Celery task returns an operational metadata dict containing
+  `process_status_id`, `output_path`, and `status`.
 - `build_markdown_dispatcher(...)` returns the FastAPI strategy for
   `TASK_DISPATCHER=background_tasks`.
 - `build_markdown_dispatcher(...)` returns the Celery strategy for
@@ -520,8 +675,11 @@ Integration:
 - `POST /labs/review` returns the same response in `background_tasks` mode.
 - `POST /labs/review` returns the same response in `celery` mode with Celery
   enqueue mocked.
+- `POST /labs/review` in `celery` mode returns an error when enqueueing fails.
 - Process status id is passed to both dispatch strategies unchanged.
 - Output path generation remains unchanged.
+- Compose config contains `api`, `worker`, `redis`, and `mongodb` services and
+  passes Redis and MongoDB service URLs to both Python services.
 
 Manual verification:
 
@@ -530,6 +688,9 @@ Manual verification:
 - Start Redis, run the API with `TASK_DISPATCHER=celery`, start a Celery worker,
   submit a Markdown file, and confirm the worker updates the same process status
   and writes the expected output files.
+- Run `docker compose up --build api worker redis mongodb`, submit a Markdown
+  file, and confirm Redis-backed enqueueing, worker execution, MongoDB process
+  status updates, and Celery result storage.
 
 ## Risks and Mitigations
 
@@ -546,21 +707,22 @@ Manual verification:
   - Mitigation: defer broad retry policy until the job is confirmed idempotent.
 
 - Risk: Redis outage in Celery mode prevents work from being enqueued.
-  - Mitigation: fail visibly at enqueue time and keep `background_tasks` as the
-    default for environments without Redis.
+  - Mitigation: return an API error before the client receives a `process_id`
+    and keep `background_tasks` as the default for environments without Redis.
+
+- Risk: Requiring Celery result storage adds another Redis dependency surface.
+  - Mitigation: use the same Redis service with separate logical databases for
+    broker and result backend, and validate `CELERY_RESULT_BACKEND` at startup
+    or dispatcher construction in Celery mode.
 
 - Risk: Duplicating agent construction between API and worker can drift.
   - Mitigation: move shared construction into
     `build_markdown_processing_dependencies()` and reuse it where possible.
 
+- Risk: Local Compose MongoDB could diverge from production MongoDB behavior.
+  - Mitigation: use MongoDB only as a local development service in Compose and
+    keep production configuration environment-driven.
+
 ## Open Questions
 
-- Should `CELERY_RESULT_BACKEND` be required, or can production disable result
-  storage if process status remains the source of truth? Even with our MongoDB, I feel that to keep robustness and well architecture it MUST be required to save the result, so implement saving the results, just for good architecture.
-- Should failed Celery enqueue attempts mark the existing `ProcessStatus` as
-  `FAILED`, or should the API return an error before the client receives a
-  `process_id`? It should return an error before the client receives `process_id`, I understood that this is a prior step, and should be stopped before moving foward.
-- Should the first Celery implementation use `acks_late=True`, or should that
-  wait until output writes and LLM calls are made idempotent?
-- Should the local development stack add Redis to Docker Compose in the same
-  implementation milestone? Yes, read our `Dockerfile` and create the services related using docker compose, this will make easier start our necessary services.
+- None.

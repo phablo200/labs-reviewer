@@ -1,0 +1,2 @@
+DISPATCHER_BACKGROUND_TASKS = "background_tasks"
+DISPATCHER_CELERY = "celery"
