@@ -11,8 +11,8 @@ from pydantic import Field
 
 from core.utils.datetime import utc_now
 
-ProcessStatusState = Literal["IN_PROGRESS", "FAILED", "SUCCEEDED"]
-AgentProcessStatusState = ProcessStatusState
+ProcessStatusState = Literal["WRITTING", "IN_PROGRESS", "FAILED", "SUCCEEDED"]
+AgentProcessStatusState = Literal["IN_PROGRESS", "FAILED", "SUCCEEDED"]
 
 
 class AgentProcessStatus(Document):
@@ -36,10 +36,23 @@ class ProcessStatus(Document):
     """Persisted status for a complete Labs processing workflow."""
 
     id: UUID = Field(default_factory=uuid4)
-    file: str
+    file: str | None = None
     status: ProcessStatusState = "IN_PROGRESS"
     created_at: datetime = Field(default_factory=utc_now)
     user_id: UUID
 
     class Settings:
         name = "process_status"
+
+
+class ProcessStatusNote(Document):
+    """Persisted note attached to a Labs process status."""
+
+    id: UUID = Field(default_factory=uuid4)
+    process_status_id: UUID
+    description: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "process_status_notes"

@@ -12,11 +12,14 @@ from labs.process_status.models import (
 )
 from labs.process_status.repository import (
     AgentProcessStatusRepository,
+    ProcessStatusNoteRepository,
     ProcessStatusRepository,
 )
 from labs.process_status.schemas import (
     AgentProcessStatusDetailResponse,
     AgentProcessStatusSummaryResponse,
+    ProcessStatusNoteRequest,
+    ProcessStatusNoteResponse,
     ProcessStatusResponse,
 )
 
@@ -28,9 +31,11 @@ class ProcessStatusService:
         self,
         repository: ProcessStatusRepository | None = None,
         agent_repository: AgentProcessStatusRepository | None = None,
+        note_repository: ProcessStatusNoteRepository | None = None,
     ) -> None:
         self.repository = repository or ProcessStatusRepository()
         self.agent_repository = agent_repository or AgentProcessStatusRepository()
+        self.note_repository = note_repository or ProcessStatusNoteRepository()
 
     async def create_process_for_review(
         self,
@@ -47,6 +52,64 @@ class ProcessStatusService:
         user_id: UUID,
     ) -> ProcessStatus:
         return await self.create_process_for_review(file=file, user_id=user_id)
+
+    async def create_writing_process_status(
+        self,
+        *,
+        user_id: UUID,
+    ) -> ProcessStatusResponse:
+        process_status = await self.repository.create_writing(user_id=user_id)
+        return ProcessStatusResponse.from_process_status(process_status)
+
+    async def create_or_update_note(
+        self,
+        *,
+        user_id: UUID,
+        request: ProcessStatusNoteRequest,
+        note_id: UUID | None = None,
+    ) -> ProcessStatusNoteResponse | None:
+        if note_id is None:
+            process_status = await self.repository.get_by_id(
+                process_id=request.process_status_id,
+                user_id=user_id,
+            )
+            if process_status is None:
+                return None
+
+            note = await self.note_repository.create(
+                process_status_id=process_status.id,
+                description=request.note,
+            )
+            return ProcessStatusNoteResponse.from_process_status_note(note)
+
+        note = await self.note_repository.get_by_id(note_id)
+        if note is None:
+            return None
+
+        process_status = await self.repository.get_by_id(
+            process_id=note.process_status_id,
+            user_id=user_id,
+        )
+        if process_status is None:
+            return None
+
+        updated_note = await self.note_repository.update(
+            note=note,
+            description=request.note,
+        )
+        return ProcessStatusNoteResponse.from_process_status_note(updated_note)
+
+    async def list_notes(self, *, user_id: UUID) -> list[ProcessStatusNoteResponse]:
+        process_statuses = await self.repository.list_by_user_id(
+            user_id=user_id,
+            limit=0,
+        )
+        process_status_ids = [process_status.id for process_status in process_statuses]
+        notes = await self.note_repository.list_by_process_status_ids(process_status_ids)
+        return [
+            ProcessStatusNoteResponse.from_process_status_note(note)
+            for note in notes
+        ]
 
     async def create_agent_process(
         self,

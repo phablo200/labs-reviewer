@@ -5,12 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from labs.process_status.models import (
     AgentProcessStatus,
     AgentProcessStatusState,
     ProcessStatus,
+    ProcessStatusNote,
     ProcessStatusState,
 )
 
@@ -77,7 +78,7 @@ class ProcessStatusResponse(BaseModel):
     """Process status response assembled from related agent process records."""
 
     id: UUID
-    file: str
+    file: str | None
     status: ProcessStatusState
     created_at: datetime
     user_id: UUID
@@ -96,4 +97,41 @@ class ProcessStatusResponse(BaseModel):
             created_at=process_status.created_at,
             user_id=process_status.user_id,
             data=data or [],
+        )
+
+
+class ProcessStatusNoteRequest(BaseModel):
+    """Request payload for creating or updating a process note."""
+
+    process_status_id: UUID
+    note: str = Field(min_length=1)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def strip_note(cls, value: str) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
+class ProcessStatusNoteResponse(BaseModel):
+    """Persisted process note response."""
+
+    id: UUID
+    process_status_id: UUID
+    description: str
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_process_status_note(
+        cls,
+        process_status_note: ProcessStatusNote,
+    ) -> ProcessStatusNoteResponse:
+        return cls(
+            id=process_status_note.id,
+            process_status_id=process_status_note.process_status_id,
+            description=process_status_note.description,
+            created_at=process_status_note.created_at,
+            updated_at=process_status_note.updated_at,
         )

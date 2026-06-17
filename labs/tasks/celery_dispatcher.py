@@ -15,7 +15,8 @@ class CeleryMarkdownDispatcher:
     async def enqueue(
         self,
         *,
-        job: MarkdownOrganizationJob
+        job: MarkdownOrganizationJob,
+        background_tasks: BackgroundTasks | None = None,
     ) -> None:
         try:
             process_markdown_job.delay(
@@ -27,4 +28,3 @@ class CeleryMarkdownDispatcher:
             raise TaskDispatchEnqueueError(
                 "Failed to enqueue Celery markdown organization job."
             ) from exc
-

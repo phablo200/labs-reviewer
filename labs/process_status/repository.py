@@ -3,12 +3,14 @@
 import re
 from uuid import UUID
 
-from beanie.operators import RegEx
+from beanie.operators import In, RegEx
 
+from core.utils.datetime import utc_now
 from labs.process_status.models import (
     AgentProcessStatus,
     AgentProcessStatusState,
     ProcessStatus,
+    ProcessStatusNote,
 )
 
 
@@ -24,6 +26,15 @@ class ProcessStatusRepository:
         process_status = ProcessStatus(
             file=file,
             status="IN_PROGRESS",
+            user_id=user_id,
+        )
+        await process_status.insert()
+        return process_status
+
+    async def create_writing(self, *, user_id: UUID) -> ProcessStatus:
+        process_status = ProcessStatus(
+            file=None,
+            status="WRITTING",
             user_id=user_id,
         )
         await process_status.insert()
@@ -65,6 +76,52 @@ class ProcessStatusRepository:
     async def save(self, process_status: ProcessStatus) -> ProcessStatus:
         await process_status.save()
         return process_status
+
+
+class ProcessStatusNoteRepository:
+    """Wrap Beanie operations for process status note persistence."""
+
+    async def create(
+        self,
+        *,
+        process_status_id: UUID,
+        description: str,
+    ) -> ProcessStatusNote:
+        process_status_note = ProcessStatusNote(
+            process_status_id=process_status_id,
+            description=description,
+        )
+        await process_status_note.insert()
+        return process_status_note
+
+    async def get_by_id(self, note_id: UUID) -> ProcessStatusNote | None:
+        return await ProcessStatusNote.find_one(ProcessStatusNote.id == note_id)
+
+    async def update(
+        self,
+        *,
+        note: ProcessStatusNote,
+        description: str,
+    ) -> ProcessStatusNote:
+        note.description = description
+        note.updated_at = utc_now()
+        await note.save()
+        return note
+
+    async def list_by_process_status_ids(
+        self,
+        process_status_ids: list[UUID],
+    ) -> list[ProcessStatusNote]:
+        if not process_status_ids:
+            return []
+
+        return await (
+            ProcessStatusNote.find(
+                In(ProcessStatusNote.process_status_id, process_status_ids)
+            )
+            .sort("-updated_at", "-created_at")
+            .to_list()
+        )
 
 
 class AgentProcessStatusRepository:

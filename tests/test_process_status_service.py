@@ -3,7 +3,12 @@ from uuid import uuid4
 
 import anyio
 
-from labs.process_status.models import AgentProcessStatus, ProcessStatus
+from labs.process_status.models import (
+    AgentProcessStatus,
+    ProcessStatus,
+    ProcessStatusNote,
+)
+from labs.process_status.schemas import ProcessStatusNoteRequest
 from labs.process_status.service import ProcessStatusService
 
 
@@ -35,6 +40,18 @@ def _agent_process_status(**kwargs) -> AgentProcessStatus:
     return AgentProcessStatus.model_construct(**values)
 
 
+def _process_status_note(**kwargs) -> ProcessStatusNote:
+    values = {
+        "id": uuid4(),
+        "process_status_id": uuid4(),
+        "description": "Draft note",
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    values.update(kwargs)
+    return ProcessStatusNote.model_construct(**values)
+
+
 class _ProcessRepositoryStub:
     def __init__(self) -> None:
         self.created: ProcessStatus | None = None
@@ -45,6 +62,10 @@ class _ProcessRepositoryStub:
 
     async def create(self, *, file, user_id):
         self.created = _process_status(file=file, user_id=user_id)
+        return self.created
+
+    async def create_writing(self, *, user_id):
+        self.created = _process_status(file=None, status="WRITTING", user_id=user_id)
         return self.created
 
     async def list_by_user_id(self, *, user_id, term=None, limit=100):
@@ -105,6 +126,41 @@ class _AgentRepositoryStub:
         return agent_process_status
 
 
+class _NoteRepositoryStub:
+    def __init__(self) -> None:
+        self.created: ProcessStatusNote | None = None
+        self.updated: ProcessStatusNote | None = None
+        self.notes: list[ProcessStatusNote] = []
+        self.list_call: list | None = None
+
+    async def create(self, *, process_status_id, description):
+        self.created = _process_status_note(
+            process_status_id=process_status_id,
+            description=description,
+        )
+        return self.created
+
+    async def get_by_id(self, note_id):
+        for note in self.notes:
+            if note.id == note_id:
+                return note
+        return None
+
+    async def update(self, *, note, description):
+        note.description = description
+        note.updated_at = datetime.now(timezone.utc)
+        self.updated = note
+        return note
+
+    async def list_by_process_status_ids(self, process_status_ids):
+        self.list_call = process_status_ids
+        return [
+            note
+            for note in self.notes
+            if note.process_status_id in process_status_ids
+        ]
+
+
 def test_service_create_process_status_delegates_to_repository() -> None:
     repository = _ProcessRepositoryStub()
     service = ProcessStatusService(
@@ -121,6 +177,27 @@ def test_service_create_process_status_delegates_to_repository() -> None:
     assert result is repository.created
     assert result.file == "notes.md"
     assert result.status == "IN_PROGRESS"
+    assert result.user_id == user_id
+
+
+def test_service_create_writing_process_status_returns_response() -> None:
+    repository = _ProcessRepositoryStub()
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+        note_repository=_NoteRepositoryStub(),
+    )
+    user_id = uuid4()
+
+    async def _create():
+        return await service.create_writing_process_status(user_id=user_id)
+
+    result = anyio.run(_create)
+
+    assert repository.created.file is None
+    assert repository.created.status == "WRITTING"
+    assert result.file is None
+    assert result.status == "WRITTING"
     assert result.user_id == user_id
 
 
@@ -208,6 +285,127 @@ def test_service_passes_search_term_to_process_repository() -> None:
     anyio.run(_list)
 
     assert repository.list_call == (repository.process_status.user_id, "notes", 100)
+
+
+def test_service_create_note_requires_owned_parent_process() -> None:
+    repository = _ProcessRepositoryStub()
+    note_repository = _NoteRepositoryStub()
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+        note_repository=note_repository,
+    )
+    request = ProcessStatusNoteRequest(
+        process_status_id=repository.process_status.id,
+        note="Draft note",
+    )
+
+    async def _create_owned():
+        return await service.create_or_update_note(
+            user_id=repository.process_status.user_id,
+            request=request,
+        )
+
+    async def _create_unowned():
+        return await service.create_or_update_note(
+            user_id=uuid4(),
+            request=request,
+        )
+
+    owned = anyio.run(_create_owned)
+    unowned = anyio.run(_create_unowned)
+
+    assert owned.description == "Draft note"
+    assert owned.process_status_id == repository.process_status.id
+    assert unowned is None
+
+
+def test_service_update_note_requires_existing_owned_parent_process() -> None:
+    repository = _ProcessRepositoryStub()
+    note_repository = _NoteRepositoryStub()
+    note = _process_status_note(
+        process_status_id=repository.process_status.id,
+        description="Old note",
+    )
+    note_repository.notes = [note]
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+        note_repository=note_repository,
+    )
+    request = ProcessStatusNoteRequest(
+        process_status_id=uuid4(),
+        note="New note",
+    )
+
+    async def _update_owned():
+        return await service.create_or_update_note(
+            user_id=repository.process_status.user_id,
+            request=request,
+            note_id=note.id,
+        )
+
+    async def _update_unowned():
+        return await service.create_or_update_note(
+            user_id=uuid4(),
+            request=request,
+            note_id=note.id,
+        )
+
+    owned = anyio.run(_update_owned)
+    unowned = anyio.run(_update_unowned)
+
+    assert owned.id == note.id
+    assert owned.description == "New note"
+    assert note_repository.updated is note
+    assert unowned is None
+
+
+def test_service_update_note_returns_none_when_note_is_missing() -> None:
+    repository = _ProcessRepositoryStub()
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+        note_repository=_NoteRepositoryStub(),
+    )
+    request = ProcessStatusNoteRequest(
+        process_status_id=repository.process_status.id,
+        note="New note",
+    )
+
+    async def _update_missing():
+        return await service.create_or_update_note(
+            user_id=repository.process_status.user_id,
+            request=request,
+            note_id=uuid4(),
+        )
+
+    assert anyio.run(_update_missing) is None
+
+
+def test_service_list_notes_filters_to_owned_process_ids() -> None:
+    repository = _ProcessRepositoryStub()
+    owned_first = _process_status(user_id=repository.process_status.user_id)
+    owned_second = _process_status(user_id=repository.process_status.user_id)
+    repository.process_statuses = [owned_first, owned_second]
+    note_repository = _NoteRepositoryStub()
+    visible_note = _process_status_note(process_status_id=owned_first.id)
+    hidden_note = _process_status_note(process_status_id=uuid4())
+    note_repository.notes = [visible_note, hidden_note]
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+        note_repository=note_repository,
+    )
+
+    async def _list():
+        return await service.list_notes(user_id=repository.process_status.user_id)
+
+    response = anyio.run(_list)
+
+    assert repository.list_call == (repository.process_status.user_id, None, 0)
+    assert note_repository.list_call == [owned_first.id, owned_second.id]
+    assert [item.id for item in response] == [visible_note.id]
 
 
 def test_service_build_status_response_excludes_result_and_builds_tree() -> None:
