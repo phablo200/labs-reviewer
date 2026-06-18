@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -97,6 +98,28 @@ class ProcessStatusResponse(BaseModel):
             created_at=process_status.created_at,
             user_id=process_status.user_id,
             data=data or [],
+        )
+
+
+class WritingProcessStatusResponse(BaseModel):
+    """Response for a newly created manual writing process."""
+
+    id: UUID
+    file: str
+    status: Literal["WRITTING"] = "WRITTING"
+    created_at: datetime
+    user_id: UUID
+
+    @classmethod
+    def from_process_status(
+        cls,
+        process_status: ProcessStatus,
+    ) -> WritingProcessStatusResponse:
+        return cls(
+            id=process_status.id,
+            file=process_status.file or "",
+            created_at=process_status.created_at,
+            user_id=process_status.user_id,
         )
 
 

@@ -85,10 +85,13 @@ def test_process_status_defaults_to_in_progress() -> None:
 
 
 def test_process_status_can_be_writting() -> None:
-    process_status = _process_status(file=None, status="WRITTING")
+    process_status = _process_status(
+        file="2026-06-18 10:00:00",
+        status="WRITTING",
+    )
 
     assert process_status.status == "WRITTING"
-    assert process_status.file is None
+    assert process_status.file == "2026-06-18 10:00:00"
 
 
 def test_process_status_note_uses_expected_collection_and_timestamps() -> None:

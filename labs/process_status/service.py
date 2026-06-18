@@ -21,6 +21,7 @@ from labs.process_status.schemas import (
     ProcessStatusNoteRequest,
     ProcessStatusNoteResponse,
     ProcessStatusResponse,
+    WritingProcessStatusResponse,
 )
 
 
@@ -57,9 +58,9 @@ class ProcessStatusService:
         self,
         *,
         user_id: UUID,
-    ) -> ProcessStatusResponse:
+    ) -> WritingProcessStatusResponse:
         process_status = await self.repository.create_writing(user_id=user_id)
-        return ProcessStatusResponse.from_process_status(process_status)
+        return WritingProcessStatusResponse.from_process_status(process_status)
 
     async def create_or_update_note(
         self,

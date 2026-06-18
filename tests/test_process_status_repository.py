@@ -174,6 +174,11 @@ def test_process_repository_create_inserts_process_status(monkeypatch) -> None:
 
 def test_process_repository_create_writing_inserts_writting_status(monkeypatch) -> None:
     monkeypatch.setattr(repository_module, "ProcessStatus", _FakeProcessStatus)
+    monkeypatch.setattr(
+        repository_module,
+        "utc_now",
+        lambda: datetime(2026, 6, 18, 10, 0, 0, tzinfo=timezone.utc),
+    )
     repository = ProcessStatusRepository()
     user_id = uuid4()
 
@@ -183,7 +188,7 @@ def test_process_repository_create_writing_inserts_writting_status(monkeypatch) 
     process_status = anyio.run(_create)
 
     assert process_status.inserted is True
-    assert process_status.file is None
+    assert process_status.file == "2026-06-18 10:00:00"
     assert process_status.status == "WRITTING"
     assert process_status.user_id == user_id
 

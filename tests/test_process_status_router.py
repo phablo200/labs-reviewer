@@ -112,7 +112,7 @@ class _ServiceStub:
         self.create_writing_calls.append(user_id)
         return ProcessStatusResponse(
             id=uuid4(),
-            file=None,
+            file="2026-06-18 10:00:00",
             status="WRITTING",
             created_at=datetime.now(timezone.utc),
             user_id=user_id,
@@ -218,10 +218,26 @@ def test_create_process_endpoint_accepts_empty_body_and_returns_writting(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["file"] is None
+    assert payload["file"] == "2026-06-18 10:00:00"
     assert payload["status"] == "WRITTING"
     assert payload["user_id"] == str(USER_ID)
+    assert "data" not in payload
     assert service.create_writing_calls == [USER_ID]
+
+
+def test_create_process_openapi_documents_empty_body_and_create_response() -> None:
+    schema = _app().openapi()
+    operation = schema["paths"]["/labs/processes/create"]["post"]
+
+    assert "requestBody" not in operation
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/WritingProcessStatusResponse"
+    }
+
+    response_schema = schema["components"]["schemas"]["WritingProcessStatusResponse"]
+    assert "data" not in response_schema["properties"]
+    assert response_schema["properties"]["file"]["type"] == "string"
+    assert response_schema["properties"]["status"]["const"] == "WRITTING"
 
 
 def test_note_create_endpoint_returns_only_note_fields(monkeypatch) -> None:

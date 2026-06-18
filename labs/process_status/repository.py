@@ -33,7 +33,7 @@ class ProcessStatusRepository:
 
     async def create_writing(self, *, user_id: UUID) -> ProcessStatus:
         process_status = ProcessStatus(
-            file=None,
+            file=utc_now().strftime("%Y-%m-%d %H:%M:%S"),
             status="WRITTING",
             user_id=user_id,
         )

@@ -65,7 +65,11 @@ class _ProcessRepositoryStub:
         return self.created
 
     async def create_writing(self, *, user_id):
-        self.created = _process_status(file=None, status="WRITTING", user_id=user_id)
+        self.created = _process_status(
+            file="2026-06-18 10:00:00",
+            status="WRITTING",
+            user_id=user_id,
+        )
         return self.created
 
     async def list_by_user_id(self, *, user_id, term=None, limit=100):
@@ -194,9 +198,9 @@ def test_service_create_writing_process_status_returns_response() -> None:
 
     result = anyio.run(_create)
 
-    assert repository.created.file is None
+    assert repository.created.file == "2026-06-18 10:00:00"
     assert repository.created.status == "WRITTING"
-    assert result.file is None
+    assert result.file == "2026-06-18 10:00:00"
     assert result.status == "WRITTING"
     assert result.user_id == user_id
 

@@ -13,6 +13,7 @@ from labs.process_status.schemas import (
     ProcessStatusNoteRequest,
     ProcessStatusNoteResponse,
     ProcessStatusResponse,
+    WritingProcessStatusResponse,
 )
 from labs.process_status.service import ProcessStatusService
 
@@ -33,10 +34,19 @@ async def list_process_statuses(
     return await service.list_process_statuses(user_id=parse_user_id(user), term=term)
 
 
-@router.post("/create", response_model=ProcessStatusResponse)
+@router.post(
+    "/create",
+    response_model=WritingProcessStatusResponse,
+    summary="Create writing process status",
+    description=(
+        "Create a manual writing process for the authenticated user. "
+        "This endpoint does not accept a request body; id, status, timestamps, "
+        "and user ownership are assigned by the API."
+    ),
+)
 async def create_writing_process_status(
     user: AuthenticatedUser = Depends(get_current_user),
-) -> ProcessStatusResponse:
+) -> WritingProcessStatusResponse:
     """Create a manual writing process status for the authenticated user."""
     return await service.create_writing_process_status(user_id=parse_user_id(user))
 
