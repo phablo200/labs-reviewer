@@ -1,14 +1,11 @@
 """Factories for task dispatch strategies."""
 
+import core.tasks.constants as constants
 from core.config import settings
+from core.tasks.exceptions import TaskDispatcherConfigurationError
 from labs.tasks.celery_dispatcher import CeleryMarkdownDispatcher
 from labs.tasks.fastapi_dispatcher import FastAPIBackgroundMarkdownDispatcher
 from labs.tasks.markdown_jobs import MarkdownOrganizationDispatcher
-import labs.tasks.constants as constants
-
-
-class TaskDispatcherConfigurationError(Exception):
-    """Raised when task dispatch configuration is invalid."""
 
 
 def build_markdown_dispatcher(

@@ -24,6 +24,6 @@ def test_docker_compose_defines_local_celery_stack() -> None:
         "mongodb://mongodb:27017"
     )
     assert services["worker"]["command"] == (
-        "celery -A labs.tasks.celery_app.celery_app worker --loglevel=info"
+        "celery -A core.tasks.celery_app.celery_app worker --loglevel=info"
     )
     assert "mongodb_data" in compose["volumes"]

@@ -17,10 +17,6 @@ class MarkdownOrganizationJob:
     process_status_id: UUID
 
 
-class TaskDispatchEnqueueError(Exception):
-    """Raised when a task cannot be enqueued."""
-
-
 class MarkdownOrganizationDispatcher(Protocol):
     """Strategy contract for markdown organization dispatch."""
 
@@ -31,4 +27,3 @@ class MarkdownOrganizationDispatcher(Protocol):
         background_tasks: BackgroundTasks | None = None,
     ) -> None:
         ...
-

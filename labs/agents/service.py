@@ -6,13 +6,14 @@ from uuid import UUID
 
 from fastapi import BackgroundTasks, HTTPException
 
+from core.tasks.exceptions import TaskDispatchEnqueueError
 from labs.agents.labs_reviewer.schema import LabReviewerRequest, LabReviewerResponse
 from labs.agents.contants import PUBLIC_MARKDOWN_DIR, PUBLIC_PDF_DIR
 from labs.helpers.markdown_helper import MarkdownHelper
 from labs.helpers.pdf_helper import PDFHelper
 from labs.tasks.dependencies import build_markdown_processing_dependencies
 from labs.tasks.factory import build_markdown_dispatcher
-from labs.tasks.markdown_jobs import MarkdownOrganizationJob, TaskDispatchEnqueueError
+from labs.tasks.markdown_jobs import MarkdownOrganizationJob
 
 
 class LabPostService:

@@ -7,7 +7,7 @@ import anyio
 
 from core.database.mongodb import close_mongodb, init_mongodb
 from labs.helpers.markdown_helper import MarkdownHelper
-from labs.tasks.celery_app import celery_app
+from core.tasks.celery_app import celery_app
 from labs.tasks.dependencies import build_markdown_processing_dependencies
 
 

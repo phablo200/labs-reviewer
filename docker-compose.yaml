@@ -21,7 +21,7 @@ services:
     build: .
     env_file:
       - .env
-    command: celery -A labs.tasks.celery_app.celery_app worker --loglevel=info
+    command: celery -A core.tasks.celery_app.celery_app worker --loglevel=info
     environment:
       TASK_DISPATCHER: celery
       CELERY_BROKER_URL: redis://redis:6379/0

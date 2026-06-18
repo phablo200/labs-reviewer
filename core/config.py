@@ -30,6 +30,10 @@ class Settings:
         "CELERY_RESULT_BACKEND",
         "redis://localhost:6379/1",
     )
+    CELERY_TASK_MODULES: str = os.getenv(
+        "CELERY_TASK_MODULES",
+        "labs.tasks.celery_tasks",
+    )
 
 
 settings = Settings()

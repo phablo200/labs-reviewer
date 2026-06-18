@@ -5,9 +5,10 @@ import anyio
 import pytest
 from fastapi import BackgroundTasks
 
+from core.tasks.exceptions import TaskDispatchEnqueueError
 from labs.tasks.celery_dispatcher import CeleryMarkdownDispatcher
 from labs.tasks.fastapi_dispatcher import FastAPIBackgroundMarkdownDispatcher
-from labs.tasks.markdown_jobs import MarkdownOrganizationJob, TaskDispatchEnqueueError
+from labs.tasks.markdown_jobs import MarkdownOrganizationJob
 
 
 def test_fastapi_dispatcher_adds_markdown_task() -> None:

@@ -2,11 +2,9 @@
 
 from fastapi import BackgroundTasks
 
+from core.tasks.exceptions import TaskDispatchEnqueueError
 from labs.tasks.celery_tasks import process_markdown_job
-from labs.tasks.markdown_jobs import (
-    MarkdownOrganizationJob,
-    TaskDispatchEnqueueError,
-)
+from labs.tasks.markdown_jobs import MarkdownOrganizationJob
 
 
 class CeleryMarkdownDispatcher:

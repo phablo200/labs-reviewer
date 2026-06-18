@@ -1,7 +1,7 @@
 import pytest
 
+from core.tasks.exceptions import TaskDispatcherConfigurationError
 from labs.tasks.factory import (
-    TaskDispatcherConfigurationError,
     build_markdown_dispatcher,
 )
 from labs.tasks.celery_dispatcher import CeleryMarkdownDispatcher

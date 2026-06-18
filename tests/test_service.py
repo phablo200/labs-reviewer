@@ -5,9 +5,9 @@ import anyio
 from fastapi import BackgroundTasks
 import pytest
 
+from core.tasks.exceptions import TaskDispatchEnqueueError
 import labs.agents.service as service_module
 from labs.agents.service import LabPostService
-from labs.tasks.markdown_jobs import TaskDispatchEnqueueError
 
 
 def test_enqueue_markdown_organization_uses_public_markdowns_path() -> None:
