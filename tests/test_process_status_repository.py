@@ -316,6 +316,30 @@ def test_note_repository_lists_notes_by_process_status_ids(monkeypatch) -> None:
     assert expression.other == process_ids
 
 
+def test_note_repository_lists_notes_by_single_process_status_id(monkeypatch) -> None:
+    monkeypatch.setattr(
+        repository_module,
+        "ProcessStatusNote",
+        _FakeProcessStatusNoteFinder,
+    )
+    repository = ProcessStatusNoteRepository()
+    process_id = uuid4()
+
+    async def _list():
+        return await repository.list_by_process_status_id(process_id)
+
+    result = anyio.run(_list)
+
+    assert result == _FakeProcessStatusNoteFinder.query.results
+    assert _FakeProcessStatusNoteFinder.query.sort_values == (
+        "created_at",
+        "updated_at",
+    )
+    assert _FakeProcessStatusNoteFinder.find_expressions == (
+        ("process_status_id", process_id),
+    )
+
+
 def test_note_repository_get_by_id_queries_note_id(monkeypatch) -> None:
     monkeypatch.setattr(
         repository_module,

@@ -123,6 +123,18 @@ class ProcessStatusNoteRepository:
             .to_list()
         )
 
+    async def list_by_process_status_id(
+        self,
+        process_status_id: UUID,
+    ) -> list[ProcessStatusNote]:
+        return await (
+            ProcessStatusNote.find(
+                ProcessStatusNote.process_status_id == process_status_id
+            )
+            .sort("created_at", "updated_at")
+            .to_list()
+        )
+
 
 class AgentProcessStatusRepository:
     """Wrap Beanie operations for agent process status persistence."""

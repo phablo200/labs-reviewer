@@ -136,6 +136,7 @@ class _NoteRepositoryStub:
         self.updated: ProcessStatusNote | None = None
         self.notes: list[ProcessStatusNote] = []
         self.list_call: list | None = None
+        self.single_process_list_call = None
 
     async def create(self, *, process_status_id, description):
         self.created = _process_status_note(
@@ -162,6 +163,14 @@ class _NoteRepositoryStub:
             note
             for note in self.notes
             if note.process_status_id in process_status_ids
+        ]
+
+    async def list_by_process_status_id(self, process_status_id):
+        self.single_process_list_call = process_status_id
+        return [
+            note
+            for note in self.notes
+            if note.process_status_id == process_status_id
         ]
 
 
@@ -322,6 +331,94 @@ def test_service_create_note_requires_owned_parent_process() -> None:
     assert owned.description == "Draft note"
     assert owned.process_status_id == repository.process_status.id
     assert unowned is None
+
+
+def test_service_create_note_from_file_requires_owned_parent_process() -> None:
+    repository = _ProcessRepositoryStub()
+    note_repository = _NoteRepositoryStub()
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+        note_repository=note_repository,
+    )
+
+    async def _create_owned():
+        return await service.create_note_from_file(
+            process_status_id=repository.process_status.id,
+            user_id=repository.process_status.user_id,
+            description="  # Raw note\n",
+        )
+
+    async def _create_unowned():
+        return await service.create_note_from_file(
+            process_status_id=repository.process_status.id,
+            user_id=uuid4(),
+            description="Hidden note",
+        )
+
+    owned = anyio.run(_create_owned)
+    unowned = anyio.run(_create_unowned)
+
+    assert owned.description == "  # Raw note\n"
+    assert owned.process_status_id == repository.process_status.id
+    assert note_repository.created.description == "  # Raw note\n"
+    assert unowned is None
+
+
+def test_service_get_process_notes_requires_owned_parent_process() -> None:
+    repository = _ProcessRepositoryStub()
+    note_repository = _NoteRepositoryStub()
+    visible_note = _process_status_note(
+        process_status_id=repository.process_status.id,
+        description="Visible note",
+    )
+    hidden_note = _process_status_note(process_status_id=uuid4())
+    note_repository.notes = [visible_note, hidden_note]
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+        note_repository=note_repository,
+    )
+
+    async def _get_owned():
+        return await service.get_process_notes(
+            process_status_id=repository.process_status.id,
+            user_id=repository.process_status.user_id,
+        )
+
+    async def _get_unowned():
+        return await service.get_process_notes(
+            process_status_id=repository.process_status.id,
+            user_id=uuid4(),
+        )
+
+    owned = anyio.run(_get_owned)
+    unowned = anyio.run(_get_unowned)
+
+    assert owned.process_status is repository.process_status
+    assert owned.notes == [visible_note]
+    assert note_repository.single_process_list_call == repository.process_status.id
+    assert unowned is None
+
+
+def test_service_list_notes_for_process_returns_notes_only() -> None:
+    repository = _ProcessRepositoryStub()
+    note_repository = _NoteRepositoryStub()
+    note = _process_status_note(process_status_id=repository.process_status.id)
+    note_repository.notes = [note]
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+        note_repository=note_repository,
+    )
+
+    async def _list():
+        return await service.list_notes_for_process(
+            process_status_id=repository.process_status.id,
+            user_id=repository.process_status.user_id,
+        )
+
+    assert anyio.run(_list) == [note]
 
 
 def test_service_update_note_requires_existing_owned_parent_process() -> None:

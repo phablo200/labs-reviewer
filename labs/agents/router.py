@@ -1,11 +1,15 @@
 """HTTP routes for Blog Post Writer features."""
 
+from pathlib import Path
+from uuid import UUID
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 
 from core.auth.dependencies import get_current_user
 from core.auth.schemas import AuthenticatedUser
 from core.auth.service import parse_user_id
 from labs.agents.service import LabPostService
+from labs.process_status.schemas import ProcessStatusNoteResponse
 
 router = APIRouter(
     prefix="/labs",
@@ -18,25 +22,63 @@ outputs_router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 service = LabPostService()
+NOTE_FILE_MAX_BYTES = 10 * 1024
+ALLOWED_NOTE_FILE_SUFFIXES = {".md", ".txt"}
 
 
-@router.post("/review")
-async def review(
-    background_tasks: BackgroundTasks,
+@router.post("/files-note/{process_status_id}", response_model=ProcessStatusNoteResponse)
+async def create_file_note(
+    process_status_id: UUID,
     file: UploadFile = File(...),
     user: AuthenticatedUser = Depends(get_current_user),
-) -> dict[str, str]:
-    """Transform markdown notes into a structured blog post."""
+) -> ProcessStatusNoteResponse:
+    """Store uploaded note file content for an existing process."""
+    filename = Path(file.filename or "").name
+    if not filename:
+        raise HTTPException(status_code=400, detail="A filename is required.")
+
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_NOTE_FILE_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail="Only .md and .txt files are supported.",
+        )
+
     raw_content = await file.read()
+    if not raw_content:
+        raise HTTPException(status_code=422, detail="File must not be empty.")
+    if len(raw_content) > NOTE_FILE_MAX_BYTES:
+        raise HTTPException(
+            status_code=422,
+            detail="File must be 10 KiB or smaller.",
+        )
+
     try:
-        context = raw_content.decode("utf-8")
+        description = raw_content.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.") from exc
 
-    return await service.enqueue_markdown_organization(
+    note = await service.create_note_from_file(
+        process_status_id=process_status_id,
+        user_id=parse_user_id(user),
+        description=description,
+    )
+    if note is None:
+        raise HTTPException(status_code=404, detail="Process status not found.")
+
+    return note
+
+
+@router.post("/review/{process_status_id}")
+async def review(
+    background_tasks: BackgroundTasks,
+    process_status_id: UUID,
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> dict[str, str]:
+    """Transform stored process notes into a structured blog post."""
+    return await service.enqueue_markdown_organization_for_process(
         background_tasks=background_tasks,
-        filename=file.filename or "",
-        context=context,
+        process_status_id=process_status_id,
         user_id=parse_user_id(user),
     )
 

@@ -1,6 +1,7 @@
 """Business operations for Labs process status tracking."""
 
 from collections import defaultdict
+from dataclasses import dataclass
 from uuid import UUID
 
 from core.utils.datetime import utc_now
@@ -8,6 +9,7 @@ from labs.process_status.models import (
     AgentProcessStatus,
     AgentProcessStatusState,
     ProcessStatus,
+    ProcessStatusNote,
     ProcessStatusState,
 )
 from labs.process_status.repository import (
@@ -23,6 +25,12 @@ from labs.process_status.schemas import (
     ProcessStatusResponse,
     WritingProcessStatusResponse,
 )
+
+
+@dataclass(frozen=True)
+class ProcessStatusNotes:
+    process_status: ProcessStatus
+    notes: list[ProcessStatusNote]
 
 
 class ProcessStatusService:
@@ -100,6 +108,26 @@ class ProcessStatusService:
         )
         return ProcessStatusNoteResponse.from_process_status_note(updated_note)
 
+    async def create_note_from_file(
+        self,
+        *,
+        process_status_id: UUID,
+        user_id: UUID,
+        description: str,
+    ) -> ProcessStatusNoteResponse | None:
+        process_status = await self.repository.get_by_id(
+            process_id=process_status_id,
+            user_id=user_id,
+        )
+        if process_status is None:
+            return None
+
+        note = await self.note_repository.create(
+            process_status_id=process_status.id,
+            description=description,
+        )
+        return ProcessStatusNoteResponse.from_process_status_note(note)
+
     async def list_notes(self, *, user_id: UUID) -> list[ProcessStatusNoteResponse]:
         process_statuses = await self.repository.list_by_user_id(
             user_id=user_id,
@@ -111,6 +139,37 @@ class ProcessStatusService:
             ProcessStatusNoteResponse.from_process_status_note(note)
             for note in notes
         ]
+
+    async def get_process_notes(
+        self,
+        *,
+        process_status_id: UUID,
+        user_id: UUID,
+    ) -> ProcessStatusNotes | None:
+        process_status = await self.repository.get_by_id(
+            process_id=process_status_id,
+            user_id=user_id,
+        )
+        if process_status is None:
+            return None
+
+        notes = await self.note_repository.list_by_process_status_id(process_status.id)
+        return ProcessStatusNotes(process_status=process_status, notes=notes)
+
+    async def list_notes_for_process(
+        self,
+        *,
+        process_status_id: UUID,
+        user_id: UUID,
+    ) -> list[ProcessStatusNote] | None:
+        process_notes = await self.get_process_notes(
+            process_status_id=process_status_id,
+            user_id=user_id,
+        )
+        if process_notes is None:
+            return None
+
+        return process_notes.notes
 
     async def create_agent_process(
         self,
