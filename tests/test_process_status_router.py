@@ -89,6 +89,7 @@ class _ServiceStub:
         self.agent_calls: list[tuple[UUID, UUID]] = []
         self.create_writing_calls: list[UUID] = []
         self.note_calls: list[tuple[UUID, object, UUID | None]] = []
+        self.file_note_calls: list[tuple[UUID, UUID, str]] = []
         self.note_list_calls: list[UUID] = []
 
     async def list_process_statuses(self, *, user_id: UUID, term: str | None = None):
@@ -121,6 +122,25 @@ class _ServiceStub:
 
     async def create_or_update_note(self, *, user_id: UUID, request, note_id=None):
         self.note_calls.append((user_id, request, note_id))
+        return self.note_response
+
+    async def create_note_from_file(
+        self,
+        *,
+        process_status_id: UUID,
+        user_id: UUID,
+        description: str,
+    ):
+        self.file_note_calls.append((process_status_id, user_id, description))
+        if self.note_response is None:
+            return ProcessStatusNoteResponse(
+                id=uuid4(),
+                process_status_id=process_status_id,
+                description=description,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+
         return self.note_response
 
     async def list_notes(self, *, user_id: UUID):
@@ -156,6 +176,20 @@ async def _post(app: FastAPI, path: str, json: dict | None = None) -> httpx.Resp
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         return await client.post(path, json=json)
+
+
+async def _post_file(
+    app: FastAPI,
+    path: str,
+    filename: str,
+    content: bytes,
+) -> httpx.Response:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        return await client.post(
+            path,
+            files={"file": (filename, content, "text/plain")},
+        )
 
 
 def test_status_endpoint_requires_authorization(monkeypatch) -> None:
@@ -308,6 +342,35 @@ def test_note_list_endpoint_returns_authenticated_user_notes(monkeypatch) -> Non
     payload = response.json()
     assert [item["id"] for item in payload] == [str(first.id), str(second.id)]
     assert service.note_list_calls == [USER_ID]
+
+
+def test_file_note_endpoint_stores_raw_uploaded_note(monkeypatch) -> None:
+    service = _ServiceStub()
+    monkeypatch.setattr(process_status_router, "service", service)
+    process_id = uuid4()
+
+    response = anyio.run(
+        _post_file,
+        _app(),
+        f"/labs/files-note/{process_id}",
+        "NOTES.MD",
+        b"  # Raw note\n",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["process_status_id"] == str(process_id)
+    assert payload["description"] == "  # Raw note\n"
+    assert service.file_note_calls == [(process_id, USER_ID, "  # Raw note\n")]
+
+
+def test_file_note_openapi_is_documented_on_process_status_router() -> None:
+    schema = _app().openapi()
+
+    assert "/labs/files-note/{process_status_id}" in schema["paths"]
+    operation = schema["paths"]["/labs/files-note/{process_status_id}"]["post"]
+    assert operation["tags"] == ["Process Status"]
+    assert "multipart/form-data" in operation["requestBody"]["content"]
 
 
 def test_note_endpoints_return_404_for_missing_or_unauthorized_resource(

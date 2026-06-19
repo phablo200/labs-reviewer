@@ -1,8 +1,9 @@
 """HTTP routes for Labs process status."""
 
+from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.routing import APIRoute
 
 from core.auth.dependencies import get_current_user
@@ -23,6 +24,8 @@ agent_process_router = APIRouter(
     tags=["Agent Process Status"],
 )
 service = ProcessStatusService()
+NOTE_FILE_MAX_BYTES = 10 * 1024
+ALLOWED_NOTE_FILE_SUFFIXES = {".md", ".txt"}
 
 
 @router.get("/", response_model=list[ProcessStatusResponse])
@@ -69,6 +72,48 @@ async def create_or_update_process_note(
     return note
 
 
+async def create_file_note(
+    process_status_id: UUID,
+    file: UploadFile = File(...),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> ProcessStatusNoteResponse:
+    """Store uploaded note file content for an existing process."""
+    filename = Path(file.filename or "").name
+    if not filename:
+        raise HTTPException(status_code=400, detail="A filename is required.")
+
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_NOTE_FILE_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail="Only .md and .txt files are supported.",
+        )
+
+    raw_content = await file.read()
+    if not raw_content:
+        raise HTTPException(status_code=422, detail="File must not be empty.")
+    if len(raw_content) > NOTE_FILE_MAX_BYTES:
+        raise HTTPException(
+            status_code=422,
+            detail="File must be 10 KiB or smaller.",
+        )
+
+    try:
+        description = raw_content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.") from exc
+
+    note = await service.create_note_from_file(
+        process_status_id=process_status_id,
+        user_id=parse_user_id(user),
+        description=description,
+    )
+    if note is None:
+        raise HTTPException(status_code=404, detail="Process status not found.")
+
+    return note
+
+
 async def list_process_notes(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[ProcessStatusNoteResponse]:
@@ -84,6 +129,15 @@ router.routes.append(
         endpoint=list_process_notes,
         response_model=list[ProcessStatusNoteResponse],
         methods=["GET"],
+        tags=["Process Status"],
+    )
+)
+router.routes.append(
+    APIRoute(
+        path="/labs/files-note/{process_status_id}",
+        endpoint=create_file_note,
+        response_model=ProcessStatusNoteResponse,
+        methods=["POST"],
         tags=["Process Status"],
     )
 )

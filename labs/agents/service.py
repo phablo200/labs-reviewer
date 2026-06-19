@@ -12,7 +12,6 @@ from labs.agents.labs_reviewer.schema import LabReviewerRequest, LabReviewerResp
 from labs.agents.contants import PUBLIC_MARKDOWN_DIR, PUBLIC_PDF_DIR
 from labs.helpers.markdown_helper import MarkdownHelper
 from labs.helpers.pdf_helper import PDFHelper
-from labs.process_status.schemas import ProcessStatusNoteResponse
 from labs.tasks.dependencies import build_markdown_processing_dependencies
 from labs.tasks.factory import build_markdown_dispatcher
 from labs.tasks.markdown_jobs import MarkdownOrganizationJob
@@ -129,20 +128,6 @@ class LabPostService:
             "process_id": str(process_notes.process_status.id),
             "output_file": str(output_path),
         }
-
-    async def create_note_from_file(
-        self,
-        *,
-        process_status_id: UUID,
-        user_id: UUID,
-        description: str,
-    ) -> ProcessStatusNoteResponse | None:
-        """Create a process note from decoded uploaded file content."""
-        return await self.process_status_service.create_note_from_file(
-            process_status_id=process_status_id,
-            user_id=user_id,
-            description=description,
-        )
 
     def _build_process_output_path(
         self,

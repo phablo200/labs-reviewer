@@ -8,6 +8,7 @@ import jwt
 
 from core.config import settings
 from labs.agents import router as lab_router
+from labs.process_status import router as process_status_router
 
 
 SECRET = "test-secret"
@@ -46,6 +47,7 @@ def _app() -> FastAPI:
     app = FastAPI()
     app.include_router(lab_router.router)
     app.include_router(lab_router.outputs_router)
+    app.include_router(process_status_router.router)
     return app
 
 
@@ -222,7 +224,7 @@ def test_labs_review_old_route_is_removed(monkeypatch) -> None:
 def test_file_note_accepts_md_and_txt_uploads(monkeypatch) -> None:
     _configure_auth(monkeypatch)
     service = _ServiceStub()
-    monkeypatch.setattr(lab_router, "service", service)
+    monkeypatch.setattr(process_status_router, "service", service)
     token = _token()
 
     md_response = anyio.run(
@@ -250,7 +252,7 @@ def test_file_note_accepts_md_and_txt_uploads(monkeypatch) -> None:
 
 def test_file_note_requires_authorization(monkeypatch) -> None:
     _configure_auth(monkeypatch)
-    monkeypatch.setattr(lab_router, "service", _ServiceStub())
+    monkeypatch.setattr(process_status_router, "service", _ServiceStub())
 
     response = anyio.run(
         _post_file_note,
@@ -263,7 +265,7 @@ def test_file_note_requires_authorization(monkeypatch) -> None:
 
 def test_file_note_rejects_invalid_uploads(monkeypatch) -> None:
     _configure_auth(monkeypatch)
-    monkeypatch.setattr(lab_router, "service", _ServiceStub())
+    monkeypatch.setattr(process_status_router, "service", _ServiceStub())
     token = _token()
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -300,7 +302,7 @@ def test_file_note_rejects_invalid_uploads(monkeypatch) -> None:
 
 def test_file_note_returns_404_when_process_is_missing(monkeypatch) -> None:
     _configure_auth(monkeypatch)
-    monkeypatch.setattr(lab_router, "service", _ServiceStub(note_response=None))
+    monkeypatch.setattr(process_status_router, "service", _ServiceStub(note_response=None))
     token = _token()
 
     class _MissingProcessService(_ServiceStub):
@@ -309,7 +311,7 @@ def test_file_note_returns_404_when_process_is_missing(monkeypatch) -> None:
             return None
 
     service = _MissingProcessService()
-    monkeypatch.setattr(lab_router, "service", service)
+    monkeypatch.setattr(process_status_router, "service", service)
 
     response = anyio.run(
         _post_file_note,
