@@ -4,13 +4,13 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.routing import APIRoute
 
 from core.auth.dependencies import get_current_user
 from core.auth.schemas import AuthenticatedUser
 from core.auth.service import parse_user_id
+from labs.process_status.constants import ALLOWED_NOTE_FILE_SUFFIXES, NOTE_FILE_MAX_BYTES
 from labs.process_status.schemas import (
-    AgentProcessStatusDetailResponse,
+    ProcessStatusNoteBodyRequest,
     ProcessStatusNoteRequest,
     ProcessStatusNoteResponse,
     ProcessStatusResponse,
@@ -19,13 +19,7 @@ from labs.process_status.schemas import (
 from labs.process_status.service import ProcessStatusService
 
 router = APIRouter(prefix="/labs/processes", tags=["Process Status"])
-agent_process_router = APIRouter(
-    prefix="/labs/agent-process",
-    tags=["Agent Process Status"],
-)
 service = ProcessStatusService()
-NOTE_FILE_MAX_BYTES = 10 * 1024
-ALLOWED_NOTE_FILE_SUFFIXES = {".md", ".txt"}
 
 
 @router.get("/", response_model=list[ProcessStatusResponse])
@@ -54,16 +48,20 @@ async def create_writing_process_status(
     return await service.create_writing_process_status(user_id=parse_user_id(user))
 
 
-@router.post("/notes", response_model=ProcessStatusNoteResponse)
+@router.post("/notes/{process_status_id}", response_model=ProcessStatusNoteResponse)
 async def create_or_update_process_note(
-    request: ProcessStatusNoteRequest,
+    process_status_id: UUID,
+    request: ProcessStatusNoteBodyRequest,
     id: UUID | None = None,
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> ProcessStatusNoteResponse:
     """Create or update a note owned through its parent process status."""
     note = await service.create_or_update_note(
         user_id=parse_user_id(user),
-        request=request,
+        request=ProcessStatusNoteRequest(
+            process_status_id=process_status_id,
+            note=request.note,
+        ),
         note_id=id,
     )
     if note is None:
@@ -72,6 +70,7 @@ async def create_or_update_process_note(
     return note
 
 
+@router.post("/files-note/{process_status_id}", response_model=ProcessStatusNoteResponse)
 async def create_file_note(
     process_status_id: UUID,
     file: UploadFile = File(...),
@@ -114,33 +113,12 @@ async def create_file_note(
     return note
 
 
+@router.get("/notes", response_model=list[ProcessStatusNoteResponse])
 async def list_process_notes(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[ProcessStatusNoteResponse]:
     """Return all notes owned by the authenticated user."""
     return await service.list_notes(user_id=parse_user_id(user))
-
-
-# Register the singular compatibility path on the existing router object without
-# changing main.py router registration.
-router.routes.append(
-    APIRoute(
-        path="/labs/process/notes",
-        endpoint=list_process_notes,
-        response_model=list[ProcessStatusNoteResponse],
-        methods=["GET"],
-        tags=["Process Status"],
-    )
-)
-router.routes.append(
-    APIRoute(
-        path="/labs/files-note/{process_status_id}",
-        endpoint=create_file_note,
-        response_model=ProcessStatusNoteResponse,
-        methods=["POST"],
-        tags=["Process Status"],
-    )
-)
 
 
 @router.get("/{process_id}/status", response_model=ProcessStatusResponse)
@@ -157,19 +135,3 @@ async def get_process_status(
         raise HTTPException(status_code=404, detail="Process status not found.")
 
     return process_status
-
-
-@agent_process_router.get("/{agent_process_id}", response_model=AgentProcessStatusDetailResponse)
-async def get_agent_process_status(
-    agent_process_id: UUID,
-    user: AuthenticatedUser = Depends(get_current_user),
-) -> AgentProcessStatusDetailResponse:
-    """Return agent process status with result content for the authenticated user."""
-    agent_process_status = await service.get_agent_process_with_children(
-        agent_process_id=agent_process_id,
-        user_id=parse_user_id(user),
-    )
-    if agent_process_status is None:
-        raise HTTPException(status_code=404, detail="Agent process status not found.")
-
-    return agent_process_status

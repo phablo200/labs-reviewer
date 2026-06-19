@@ -124,9 +124,22 @@ class WritingProcessStatusResponse(BaseModel):
 
 
 class ProcessStatusNoteRequest(BaseModel):
-    """Request payload for creating or updating a process note."""
+    """Internal request for creating or updating a process note."""
 
     process_status_id: UUID
+    note: str = Field(min_length=1)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def strip_note(cls, value: str) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
+class ProcessStatusNoteBodyRequest(BaseModel):
+    """Request body for creating or updating a process note."""
+
     note: str = Field(min_length=1)
 
     @field_validator("note", mode="before")

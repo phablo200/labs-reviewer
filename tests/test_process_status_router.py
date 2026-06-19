@@ -7,6 +7,7 @@ import httpx
 
 from core.auth.dependencies import get_current_user
 from core.auth.schemas import AuthenticatedUser
+from labs.process_status import agent_router as agent_process_router
 from labs.process_status import router as process_status_router
 from labs.process_status.models import AgentProcessStatus, ProcessStatus
 from labs.process_status.schemas import (
@@ -162,7 +163,7 @@ def _app(user_id: UUID | None = USER_ID) -> FastAPI:
 
         app.dependency_overrides[get_current_user] = _current_user_override
     app.include_router(process_status_router.router)
-    app.include_router(process_status_router.agent_process_router)
+    app.include_router(agent_process_router.agent_process_router)
     return app
 
 
@@ -208,10 +209,10 @@ def test_new_process_and_note_endpoints_require_authorization(monkeypatch) -> No
     note_response = anyio.run(
         _post,
         _app(user_id=None),
-        "/labs/processes/notes",
-        {"process_status_id": str(process_id), "note": "Draft note"},
+        f"/labs/processes/notes/{process_id}",
+        {"note": "Draft note"},
     )
-    list_response = anyio.run(_get, _app(user_id=None), "/labs/process/notes")
+    list_response = anyio.run(_get, _app(user_id=None), "/labs/processes/notes")
 
     assert create_response.status_code == 401
     assert note_response.status_code == 401
@@ -283,8 +284,8 @@ def test_note_create_endpoint_returns_only_note_fields(monkeypatch) -> None:
     response = anyio.run(
         _post,
         _app(),
-        "/labs/processes/notes",
-        {"process_status_id": str(process_id), "note": "  Draft note  "},
+        f"/labs/processes/notes/{process_id}",
+        {"note": "  Draft note  "},
     )
 
     assert response.status_code == 200
@@ -298,8 +299,20 @@ def test_note_create_endpoint_returns_only_note_fields(monkeypatch) -> None:
     }
     assert payload["description"] == "Draft note"
     assert service.note_calls[0][0] == USER_ID
+    assert service.note_calls[0][1].process_status_id == process_id
     assert service.note_calls[0][1].note == "Draft note"
     assert service.note_calls[0][2] is None
+
+
+def test_note_create_openapi_uses_process_status_id_path() -> None:
+    schema = _app().openapi()
+
+    assert "/labs/processes/notes/{process_status_id}" in schema["paths"]
+    operation = schema["paths"]["/labs/processes/notes/{process_status_id}"]["post"]
+    assert operation["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ProcessStatusNoteBodyRequest"
+    }
+    assert "post" not in schema["paths"]["/labs/processes/notes"]
 
 
 def test_note_update_endpoint_passes_note_id_and_returns_note(monkeypatch) -> None:
@@ -312,8 +325,8 @@ def test_note_update_endpoint_passes_note_id_and_returns_note(monkeypatch) -> No
     response = anyio.run(
         _post,
         _app(),
-        f"/labs/processes/notes?id={note_id}",
-        {"process_status_id": str(process_id), "note": "Updated note"},
+        f"/labs/processes/notes/{process_id}?id={note_id}",
+        {"note": "Updated note"},
     )
 
     assert response.status_code == 200
@@ -328,6 +341,7 @@ def test_note_update_endpoint_passes_note_id_and_returns_note(monkeypatch) -> No
     assert service.note_calls == [
         (USER_ID, service.note_calls[0][1], note_id),
     ]
+    assert service.note_calls[0][1].process_status_id == process_id
 
 
 def test_note_list_endpoint_returns_authenticated_user_notes(monkeypatch) -> None:
@@ -336,7 +350,7 @@ def test_note_list_endpoint_returns_authenticated_user_notes(monkeypatch) -> Non
     service = _ServiceStub(note_list_response=[first, second])
     monkeypatch.setattr(process_status_router, "service", service)
 
-    response = anyio.run(_get, _app(), "/labs/process/notes")
+    response = anyio.run(_get, _app(), "/labs/processes/notes")
 
     assert response.status_code == 200
     payload = response.json()
@@ -352,7 +366,7 @@ def test_file_note_endpoint_stores_raw_uploaded_note(monkeypatch) -> None:
     response = anyio.run(
         _post_file,
         _app(),
-        f"/labs/files-note/{process_id}",
+        f"/labs/processes/files-note/{process_id}",
         "NOTES.MD",
         b"  # Raw note\n",
     )
@@ -367,8 +381,8 @@ def test_file_note_endpoint_stores_raw_uploaded_note(monkeypatch) -> None:
 def test_file_note_openapi_is_documented_on_process_status_router() -> None:
     schema = _app().openapi()
 
-    assert "/labs/files-note/{process_status_id}" in schema["paths"]
-    operation = schema["paths"]["/labs/files-note/{process_status_id}"]["post"]
+    assert "/labs/processes/files-note/{process_status_id}" in schema["paths"]
+    operation = schema["paths"]["/labs/processes/files-note/{process_status_id}"]["post"]
     assert operation["tags"] == ["Process Status"]
     assert "multipart/form-data" in operation["requestBody"]["content"]
 
@@ -382,8 +396,8 @@ def test_note_endpoints_return_404_for_missing_or_unauthorized_resource(
     response = anyio.run(
         _post,
         _app(),
-        "/labs/processes/notes",
-        {"process_status_id": str(uuid4()), "note": "Draft note"},
+        f"/labs/processes/notes/{uuid4()}",
+        {"note": "Draft note"},
     )
 
     assert response.status_code == 404
@@ -418,7 +432,7 @@ def test_status_endpoint_returns_process_without_result(monkeypatch) -> None:
 
 def test_agent_process_endpoint_returns_detail_with_result(monkeypatch) -> None:
     monkeypatch.setattr(
-        process_status_router,
+        agent_process_router,
         "service",
         _ServiceStub(agent_response=_agent_process_detail_response()),
     )
@@ -432,7 +446,7 @@ def test_agent_process_endpoint_returns_detail_with_result(monkeypatch) -> None:
 
 
 def test_agent_process_endpoint_returns_404_for_missing_agent_process(monkeypatch) -> None:
-    monkeypatch.setattr(process_status_router, "service", _ServiceStub())
+    monkeypatch.setattr(agent_process_router, "service", _ServiceStub())
 
     response = anyio.run(_get, _app(), f"/labs/agent-process/{uuid4()}")
 

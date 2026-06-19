@@ -84,7 +84,7 @@ async def _post_file_note(
     transport = httpx.ASGITransport(app=_app())
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         return await client.post(
-            "/labs/files-note/00000000-0000-0000-0000-000000000001",
+            "/labs/processes/files-note/00000000-0000-0000-0000-000000000001",
             headers=headers,
             files={"file": (filename, content, "text/plain")},
         )

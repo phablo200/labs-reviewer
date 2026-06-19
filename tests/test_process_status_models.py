@@ -12,6 +12,7 @@ from labs.process_status.models import (
 from labs.process_status.schemas import (
     AgentProcessStatusDetailResponse,
     AgentProcessStatusSummaryResponse,
+    ProcessStatusNoteBodyRequest,
     ProcessStatusNoteRequest,
     ProcessStatusNoteResponse,
     ProcessStatusResponse,
@@ -160,6 +161,15 @@ def test_process_status_note_request_strips_note_and_rejects_blank() -> None:
 
     with pytest.raises(ValidationError):
         ProcessStatusNoteRequest(process_status_id=process_id, note="   ")
+
+
+def test_process_status_note_body_request_strips_note_and_rejects_blank() -> None:
+    request = ProcessStatusNoteBodyRequest(note="  draft  ")
+
+    assert request.note == "draft"
+
+    with pytest.raises(ValidationError):
+        ProcessStatusNoteBodyRequest(note="   ")
 
 
 def test_process_status_note_response_maps_note_fields() -> None:
