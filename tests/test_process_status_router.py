@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
@@ -92,6 +93,7 @@ class _ServiceStub:
         self.note_calls: list[tuple[UUID, object, UUID | None]] = []
         self.file_note_calls: list[tuple[UUID, UUID, str]] = []
         self.note_list_calls: list[UUID] = []
+        self.process_note_list_calls: list[tuple[UUID, UUID]] = []
 
     async def list_process_statuses(self, *, user_id: UUID, term: str | None = None):
         self.list_calls.append((user_id, term))
@@ -147,6 +149,13 @@ class _ServiceStub:
     async def list_notes(self, *, user_id: UUID):
         self.note_list_calls.append(user_id)
         return self.note_list_response
+
+    async def get_process_notes(self, *, process_status_id: UUID, user_id: UUID):
+        self.process_note_list_calls.append((process_status_id, user_id))
+        if self.note_list_response is None:
+            return None
+
+        return SimpleNamespace(notes=self.note_list_response)
 
 
 def _app(user_id: UUID | None = USER_ID) -> FastAPI:
@@ -213,10 +222,16 @@ def test_new_process_and_note_endpoints_require_authorization(monkeypatch) -> No
         {"note": "Draft note"},
     )
     list_response = anyio.run(_get, _app(user_id=None), "/labs/processes/notes")
+    process_list_response = anyio.run(
+        _get,
+        _app(user_id=None),
+        f"/labs/processes/notes/{process_id}",
+    )
 
     assert create_response.status_code == 401
     assert note_response.status_code == 401
     assert list_response.status_code == 401
+    assert process_list_response.status_code == 401
 
 
 def test_list_endpoint_returns_latest_processes_for_authenticated_user(monkeypatch) -> None:
@@ -356,6 +371,39 @@ def test_note_list_endpoint_returns_authenticated_user_notes(monkeypatch) -> Non
     payload = response.json()
     assert [item["id"] for item in payload] == [str(first.id), str(second.id)]
     assert service.note_list_calls == [USER_ID]
+
+
+def test_note_list_by_process_endpoint_returns_process_notes(monkeypatch) -> None:
+    process_id = uuid4()
+    first = _note_response(process_status_id=process_id)
+    second = _note_response(process_status_id=process_id)
+    service = _ServiceStub(note_list_response=[first, second])
+    monkeypatch.setattr(process_status_router, "service", service)
+
+    response = anyio.run(_get, _app(), f"/labs/processes/notes/{process_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["id"] for item in payload] == [str(first.id), str(second.id)]
+    assert [item["process_status_id"] for item in payload] == [
+        str(process_id),
+        str(process_id),
+    ]
+    assert service.process_note_list_calls == [(process_id, USER_ID)]
+
+
+def test_note_list_by_process_endpoint_returns_404_for_missing_or_unowned_process(
+    monkeypatch,
+) -> None:
+    service = _ServiceStub()
+    service.note_list_response = None
+    monkeypatch.setattr(process_status_router, "service", service)
+    process_id = uuid4()
+
+    response = anyio.run(_get, _app(), f"/labs/processes/notes/{process_id}")
+
+    assert response.status_code == 404
+    assert service.process_note_list_calls == [(process_id, USER_ID)]
 
 
 def test_file_note_endpoint_stores_raw_uploaded_note(monkeypatch) -> None:

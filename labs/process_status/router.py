@@ -121,6 +121,25 @@ async def list_process_notes(
     return await service.list_notes(user_id=parse_user_id(user))
 
 
+@router.get("/notes/{process_status_id}", response_model=list[ProcessStatusNoteResponse])
+async def list_process_notes_by_process(
+    process_status_id: UUID,
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> list[ProcessStatusNoteResponse]:
+    """Return notes for one process owned by the authenticated user."""
+    process_notes = await service.get_process_notes(
+        process_status_id=process_status_id,
+        user_id=parse_user_id(user),
+    )
+    if process_notes is None:
+        raise HTTPException(status_code=404, detail="Process status not found.")
+
+    return [
+        ProcessStatusNoteResponse.from_process_status_note(note)
+        for note in process_notes.notes
+    ]
+
+
 @router.get("/{process_id}/status", response_model=ProcessStatusResponse)
 async def get_process_status(
     process_id: UUID,

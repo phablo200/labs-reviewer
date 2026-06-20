@@ -4,7 +4,7 @@ from fastapi import BackgroundTasks
 
 from core.tasks.background_task_dispatcher import BackgroundTaskSubmission
 from core.tasks.celery_task_dispatcher import CeleryTaskSubmission
-from core.tasks.dispatcher import (
+from core.tasks.task_dispatcher import (
     TaskDispatcher,
     build_task_dispatcher,
 )
@@ -41,7 +41,7 @@ class MarkdownOrganizationTaskDispatcher:
         background_tasks: BackgroundTasks | None = None,
     ) -> None:
         await self.task_dispatcher.enqueue(
-            background_task=BackgroundTaskSubmission(
+            background_task_submission=BackgroundTaskSubmission(
                 function=MarkdownHelper.process_and_save_markdown_with_status,
                 args=(
                     job.context,
@@ -53,7 +53,7 @@ class MarkdownOrganizationTaskDispatcher:
                     self.process_status_service,
                 ),
             ),
-            celery_task=CeleryTaskSubmission(
+            celery_task_submission=CeleryTaskSubmission(
                 task=process_markdown_job,
                 kwargs={
                     "context": job.context,

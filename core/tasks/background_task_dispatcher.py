@@ -22,17 +22,17 @@ class BackgroundTasksDispatcher:
     async def enqueue(
         self,
         *,
-        background_task: BackgroundTaskSubmission | None = None,
+        background_task_submission: BackgroundTaskSubmission | None = None,
         background_tasks: BackgroundTasks | None = None,
         **_kwargs: Any,
     ) -> None:
-        if background_task is None:
+        if background_task_submission is None:
             raise RuntimeError("Background task submission is required.")
         if background_tasks is None:
             raise RuntimeError("BackgroundTasks is required for background_tasks dispatch.")
 
         background_tasks.add_task(
-            background_task.function,
-            *background_task.args,
-            **background_task.kwargs,
+            background_task_submission.function,
+            *background_task_submission.args,
+            **background_task_submission.kwargs,
         )

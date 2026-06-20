@@ -2,7 +2,7 @@ import pytest
 
 from core.tasks.background_task_dispatcher import BackgroundTasksDispatcher
 from core.tasks.celery_task_dispatcher import CeleryTaskDispatcher
-from core.tasks.dispatcher import (
+from core.tasks.task_dispatcher import (
     build_task_dispatcher,
 )
 from core.tasks.exceptions import TaskDispatcherConfigurationError

@@ -20,13 +20,13 @@ class CeleryTaskDispatcher:
     async def enqueue(
         self,
         *,
-        celery_task: CeleryTaskSubmission | None = None,
+        celery_task_submission: CeleryTaskSubmission | None = None,
         **_kwargs: Any,
     ) -> None:
-        if celery_task is None:
+        if celery_task_submission is None:
             raise RuntimeError("Celery task submission is required.")
 
         try:
-            celery_task.task.delay(**celery_task.kwargs)
+            celery_task_submission.task.delay(**celery_task_submission.kwargs)
         except Exception as exc:
             raise TaskDispatchEnqueueError("Failed to enqueue Celery task.") from exc
