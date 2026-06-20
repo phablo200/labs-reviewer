@@ -13,7 +13,10 @@ from labs.tasks.factory import (
 
 
 def test_build_task_dispatcher_returns_fastapi_strategy(monkeypatch) -> None:
-    monkeypatch.setattr("core.tasks.dispatcher.settings.TASK_DISPATCHER", "background_tasks")
+    monkeypatch.setattr(
+        "core.tasks.task_dispatcher.settings.TASK_DISPATCHER",
+        "background_tasks",
+    )
 
     dispatcher = build_task_dispatcher()
 
@@ -21,9 +24,9 @@ def test_build_task_dispatcher_returns_fastapi_strategy(monkeypatch) -> None:
 
 
 def test_build_task_dispatcher_returns_celery_strategy(monkeypatch) -> None:
-    monkeypatch.setattr("core.tasks.dispatcher.settings.TASK_DISPATCHER", "celery")
+    monkeypatch.setattr("core.tasks.task_dispatcher.settings.TASK_DISPATCHER", "celery")
     monkeypatch.setattr(
-        "core.tasks.dispatcher.settings.CELERY_RESULT_BACKEND",
+        "core.tasks.task_dispatcher.settings.CELERY_RESULT_BACKEND",
         "redis://localhost:6379/1",
     )
 
@@ -33,15 +36,18 @@ def test_build_task_dispatcher_returns_celery_strategy(monkeypatch) -> None:
 
 
 def test_build_task_dispatcher_requires_result_backend(monkeypatch) -> None:
-    monkeypatch.setattr("core.tasks.dispatcher.settings.TASK_DISPATCHER", "celery")
-    monkeypatch.setattr("core.tasks.dispatcher.settings.CELERY_RESULT_BACKEND", "")
+    monkeypatch.setattr("core.tasks.task_dispatcher.settings.TASK_DISPATCHER", "celery")
+    monkeypatch.setattr("core.tasks.task_dispatcher.settings.CELERY_RESULT_BACKEND", "")
 
     with pytest.raises(TaskDispatcherConfigurationError, match="CELERY_RESULT_BACKEND"):
         build_task_dispatcher()
 
 
 def test_build_task_dispatcher_rejects_unknown_strategy(monkeypatch) -> None:
-    monkeypatch.setattr("core.tasks.dispatcher.settings.TASK_DISPATCHER", "unknown")
+    monkeypatch.setattr(
+        "core.tasks.task_dispatcher.settings.TASK_DISPATCHER",
+        "unknown",
+    )
 
     with pytest.raises(TaskDispatcherConfigurationError, match="Unsupported"):
         build_task_dispatcher()

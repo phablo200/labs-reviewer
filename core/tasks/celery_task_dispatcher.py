@@ -1,6 +1,6 @@
 """Celery task dispatch strategy."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from core.tasks.exceptions import TaskDispatchEnqueueError
@@ -11,7 +11,7 @@ class CeleryTaskSubmission:
     """Task payload for Celery dispatch."""
 
     task: Any
-    kwargs: dict[str, Any] = field(default_factory=dict)
+    args: tuple[Any, ...] = ()
 
 
 class CeleryTaskDispatcher:
@@ -20,13 +20,9 @@ class CeleryTaskDispatcher:
     async def enqueue(
         self,
         *,
-        celery_task_submission: CeleryTaskSubmission | None = None,
-        **_kwargs: Any,
+        celery_task_submission: CeleryTaskSubmission,
     ) -> None:
-        if celery_task_submission is None:
-            raise RuntimeError("Celery task submission is required.")
-
         try:
-            celery_task_submission.task.delay(**celery_task_submission.kwargs)
+            celery_task_submission.task.delay(*celery_task_submission.args)
         except Exception as exc:
             raise TaskDispatchEnqueueError("Failed to enqueue Celery task.") from exc

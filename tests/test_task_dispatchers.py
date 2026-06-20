@@ -25,10 +25,9 @@ def test_background_tasks_dispatcher_adds_task() -> None:
 
     async def _enqueue():
         await dispatcher.enqueue(
-            background_task=BackgroundTaskSubmission(
+            background_task_submission=BackgroundTaskSubmission(
                 function=_example_task,
                 args=("value",),
-                kwargs={"enabled": True},
             ),
             background_tasks=background_tasks,
         )
@@ -39,7 +38,7 @@ def test_background_tasks_dispatcher_adds_task() -> None:
     task = background_tasks.tasks[0]
     assert task.func is _example_task
     assert task.args == ("value",)
-    assert task.kwargs == {"enabled": True}
+    assert task.kwargs == {}
 
 
 def test_background_tasks_dispatcher_requires_background_tasks() -> None:
@@ -47,10 +46,10 @@ def test_background_tasks_dispatcher_requires_background_tasks() -> None:
 
     async def _enqueue():
         await dispatcher.enqueue(
-            background_task=BackgroundTaskSubmission(function=_example_task),
+            background_task_submission=BackgroundTaskSubmission(function=_example_task),
         )
 
-    with pytest.raises(RuntimeError, match="BackgroundTasks is required"):
+    with pytest.raises(TypeError, match="background_tasks"):
         anyio.run(_enqueue)
 
 
@@ -59,49 +58,49 @@ def test_celery_task_dispatcher_enqueues_serializable_payload() -> None:
 
     class _TaskStub:
         @staticmethod
-        def delay(**kwargs):
-            calls.append(kwargs)
+        def delay(*args):
+            calls.append(args)
 
     dispatcher = CeleryTaskDispatcher()
 
     async def _enqueue():
         await dispatcher.enqueue(
-            celery_task=CeleryTaskSubmission(
+            celery_task_submission=CeleryTaskSubmission(
                 task=_TaskStub,
-                kwargs={"value": "payload"},
+                args=("payload",),
             ),
-            background_tasks=BackgroundTasks(),
         )
 
     anyio.run(_enqueue)
 
-    assert calls == [{"value": "payload"}]
+    assert calls == [("payload",)]
 
 
 def test_celery_task_dispatcher_wraps_enqueue_failure() -> None:
     class _TaskStub:
         @staticmethod
-        def delay(**_kwargs):
+        def delay(*_args):
             raise RuntimeError("redis unavailable")
 
     dispatcher = CeleryTaskDispatcher()
 
     async def _enqueue():
-        await dispatcher.enqueue(celery_task=CeleryTaskSubmission(task=_TaskStub))
+        await dispatcher.enqueue(
+            celery_task_submission=CeleryTaskSubmission(task=_TaskStub)
+        )
 
     with pytest.raises(TaskDispatchEnqueueError):
         anyio.run(_enqueue)
 
 
-def test_markdown_dispatcher_adapts_job_to_generic_dispatcher() -> None:
+def test_markdown_dispatcher_adapts_job_to_background_tasks_dispatcher() -> None:
     background_tasks = BackgroundTasks()
     writer_agent = object()
     translator_agent = object()
     metadata_agent = object()
     process_status_service = object()
-    task_dispatcher = _TaskDispatcherStub()
     dispatcher = MarkdownOrganizationTaskDispatcher(
-        task_dispatcher=task_dispatcher,
+        task_dispatcher=BackgroundTasksDispatcher(),
         writer_agent=writer_agent,
         translator_agent=translator_agent,
         metadata_agent=metadata_agent,
@@ -113,12 +112,10 @@ def test_markdown_dispatcher_adapts_job_to_generic_dispatcher() -> None:
 
     anyio.run(_enqueue)
 
-    call = task_dispatcher.calls[0]
-    assert call["background_tasks"] is background_tasks
-    assert call["background_task"].function is (
-        MarkdownHelper.process_and_save_markdown_with_status
-    )
-    assert call["background_task"].args == (
+    assert len(background_tasks.tasks) == 1
+    task = background_tasks.tasks[0]
+    assert task.func is MarkdownHelper.process_and_save_markdown_with_status
+    assert task.args == (
         "# Notes",
         Path("public/markdown/example_reviewd.md"),
         writer_agent,
@@ -127,19 +124,37 @@ def test_markdown_dispatcher_adapts_job_to_generic_dispatcher() -> None:
         UUID("00000000-0000-0000-0000-000000000001"),
         process_status_service,
     )
-    assert call["celery_task"].kwargs == {
-        "context": "# Notes",
-        "output_path": "public/markdown/example_reviewd.md",
-        "process_status_id": "00000000-0000-0000-0000-000000000001",
-    }
 
 
-class _TaskDispatcherStub:
-    def __init__(self) -> None:
-        self.calls = []
+def test_markdown_dispatcher_adapts_job_to_celery_dispatcher(monkeypatch) -> None:
+    calls = []
 
-    async def enqueue(self, **kwargs):
-        self.calls.append(kwargs)
+    class _TaskStub:
+        @staticmethod
+        def delay(*args):
+            calls.append(args)
+
+    monkeypatch.setattr("labs.tasks.factory.process_markdown_job", _TaskStub)
+    dispatcher = MarkdownOrganizationTaskDispatcher(
+        task_dispatcher=CeleryTaskDispatcher(),
+        writer_agent=object(),
+        translator_agent=object(),
+        metadata_agent=object(),
+        process_status_service=object(),
+    )
+
+    async def _enqueue():
+        await dispatcher.enqueue(job=_job(), background_tasks=BackgroundTasks())
+
+    anyio.run(_enqueue)
+
+    assert calls == [
+        (
+            "# Notes",
+            "public/markdown/example_reviewd.md",
+            "00000000-0000-0000-0000-000000000001",
+        )
+    ]
 
 
 def _example_task(*_args, **_kwargs):

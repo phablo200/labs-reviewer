@@ -34,7 +34,6 @@ async def _process_markdown_job_async(
 
 @celery_app.task(name="labs.process_markdown_job")
 def process_markdown_job(
-    *,
     context: str,
     output_path: str,
     process_status_id: str,

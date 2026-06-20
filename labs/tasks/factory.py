@@ -2,8 +2,11 @@
 
 from fastapi import BackgroundTasks
 
-from core.tasks.background_task_dispatcher import BackgroundTaskSubmission
-from core.tasks.celery_task_dispatcher import CeleryTaskSubmission
+from core.tasks.background_task_dispatcher import (
+    BackgroundTaskSubmission,
+    BackgroundTasksDispatcher,
+)
+from core.tasks.celery_task_dispatcher import CeleryTaskDispatcher, CeleryTaskSubmission
 from core.tasks.task_dispatcher import (
     TaskDispatcher,
     build_task_dispatcher,
@@ -40,29 +43,43 @@ class MarkdownOrganizationTaskDispatcher:
         job: MarkdownOrganizationJob,
         background_tasks: BackgroundTasks | None = None,
     ) -> None:
-        await self.task_dispatcher.enqueue(
-            background_task_submission=BackgroundTaskSubmission(
-                function=MarkdownHelper.process_and_save_markdown_with_status,
-                args=(
-                    job.context,
-                    job.output_path,
-                    self.writer_agent,
-                    self.translator_agent,
-                    self.metadata_agent,
-                    job.process_status_id,
-                    self.process_status_service,
+        if isinstance(self.task_dispatcher, BackgroundTasksDispatcher):
+            if background_tasks is None:
+                raise RuntimeError(
+                    "BackgroundTasks is required for background_tasks dispatch."
+                )
+
+            await self.task_dispatcher.enqueue(
+                background_task_submission=BackgroundTaskSubmission(
+                    function=MarkdownHelper.process_and_save_markdown_with_status,
+                    args=(
+                        job.context,
+                        job.output_path,
+                        self.writer_agent,
+                        self.translator_agent,
+                        self.metadata_agent,
+                        job.process_status_id,
+                        self.process_status_service,
+                    ),
                 ),
-            ),
-            celery_task_submission=CeleryTaskSubmission(
-                task=process_markdown_job,
-                kwargs={
-                    "context": job.context,
-                    "output_path": str(job.output_path),
-                    "process_status_id": str(job.process_status_id),
-                },
-            ),
-            background_tasks=background_tasks,
-        )
+                background_tasks=background_tasks,
+            )
+            return
+
+        if isinstance(self.task_dispatcher, CeleryTaskDispatcher):
+            await self.task_dispatcher.enqueue(
+                celery_task_submission=CeleryTaskSubmission(
+                    task=process_markdown_job,
+                    args=(
+                        job.context,
+                        str(job.output_path),
+                        str(job.process_status_id),
+                    ),
+                ),
+            )
+            return
+
+        raise RuntimeError("Unsupported task dispatcher.")
 
 
 def build_markdown_dispatcher(
