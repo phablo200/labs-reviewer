@@ -4,6 +4,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class Settings:
     PROJECT_NAME: str = "Agent Language Model"
     LANGUAGE_DB_PATH: str = os.getenv("LANGUAGE_DB_PATH", "public/language_database/ingl_s.json")
@@ -34,6 +42,8 @@ class Settings:
         "CELERY_TASK_MODULES",
         "labs.tasks.celery_tasks",
     )
+    CELERY_DLQ_ENABLED: bool = _env_bool("CELERY_DLQ_ENABLED", True)
+    CELERY_DLQ_KEY_PREFIX: str = os.getenv("CELERY_DLQ_KEY_PREFIX", "dlq")
 
 
 settings = Settings()

@@ -8,9 +8,9 @@ import httpx
 
 from core.auth.dependencies import get_current_user
 from core.auth.schemas import AuthenticatedUser
-from labs.process_status import agent_router as agent_process_router
-from labs.process_status import router as process_status_router
 from labs.process_status.models import AgentProcessStatus, ProcessStatus
+from labs.process_status.routers import agent_router as agent_process_router
+from labs.process_status.routers import process_status_router
 from labs.process_status.schemas import (
     AgentProcessStatusDetailResponse,
     AgentProcessStatusSummaryResponse,

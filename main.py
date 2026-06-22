@@ -7,8 +7,8 @@ from core.auth import router as auth_router
 from core.database.mongodb import close_mongodb, init_mongodb
 from core.middleware.required_headers import RequiredHeadersMiddleware
 from labs.agents import router as lab_post
-from labs.process_status import agent_router as agent_process_status_router
-from labs.process_status import router as process_status_router
+from labs.process_status.routers import agent_router as agent_process_status_router
+from labs.process_status.routers import process_status_router
 
 
 @asynccontextmanager

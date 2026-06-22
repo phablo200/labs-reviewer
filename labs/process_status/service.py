@@ -1,16 +1,17 @@
 """Business operations for Labs process status tracking."""
 
-from collections import defaultdict
 from dataclasses import dataclass
 from uuid import UUID
 
-from core.utils.datetime import utc_now
+from labs.process_status.helpers import (
+    build_summary_children,
+    group_children,
+    mark_agent_process,
+)
 from labs.process_status.models import (
     AgentProcessStatus,
-    AgentProcessStatusState,
     ProcessStatus,
     ProcessStatusNote,
-    ProcessStatusState,
 )
 from labs.process_status.repository import (
     AgentProcessStatusRepository,
@@ -19,7 +20,6 @@ from labs.process_status.repository import (
 )
 from labs.process_status.schemas import (
     AgentProcessStatusDetailResponse,
-    AgentProcessStatusSummaryResponse,
     ProcessStatusNoteRequest,
     ProcessStatusNoteResponse,
     ProcessStatusResponse,
@@ -194,7 +194,9 @@ class ProcessStatusService:
         agent_process_status: AgentProcessStatus,
         result: str | None = None,
     ) -> AgentProcessStatus:
-        return await self._mark_agent_process(
+        return await mark_agent_process(
+            agent_repository=self.agent_repository,
+            process_repository=self.repository,
             agent_process_status=agent_process_status,
             status="SUCCEEDED",
             result=result,
@@ -206,27 +208,13 @@ class ProcessStatusService:
         agent_process_status: AgentProcessStatus,
         result: str | None = None,
     ) -> AgentProcessStatus:
-        return await self._mark_agent_process(
+        return await mark_agent_process(
+            agent_repository=self.agent_repository,
+            process_repository=self.repository,
             agent_process_status=agent_process_status,
             status="FAILED",
             result=result,
         )
-
-    async def _mark_agent_process(
-        self,
-        *,
-        agent_process_status: AgentProcessStatus,
-        status: AgentProcessStatusState,
-        result: str | None = None,
-    ) -> AgentProcessStatus:
-        updated_agent_process_status = await self.agent_repository.update_status(
-            agent_process_status=agent_process_status,
-            status=status,
-            finished_at=utc_now(),
-            result=result,
-        )
-        await self._sync_process_status(updated_agent_process_status.process_status_id)
-        return updated_agent_process_status
 
     async def get_process_status(
         self,
@@ -291,8 +279,8 @@ class ProcessStatusService:
         agent_processes = await self.agent_repository.list_by_process_status_id(
             process_status.id
         )
-        children_by_parent = self._group_children(agent_processes)
-        children = self._build_summary_children(agent_process.id, children_by_parent)
+        children_by_parent = group_children(agent_processes)
+        children = build_summary_children(agent_process.id, children_by_parent)
         return AgentProcessStatusDetailResponse.from_agent_process_status(
             agent_process,
             children=children,
@@ -301,19 +289,17 @@ class ProcessStatusService:
     async def save_process_status(self, process_status: ProcessStatus) -> ProcessStatus:
         return await self.repository.save(process_status)
 
-    async def _sync_process_status(self, process_status_id: UUID) -> ProcessStatus | None:
-        agent_processes = await self.agent_repository.list_by_process_status_id(
-            process_status_id
-        )
-        status = self._derive_process_status(agent_processes)
+    async def mark_process_failed(
+        self,
+        *,
+        process_status_id: UUID,
+        result: str | None = None,
+    ) -> ProcessStatus | None:
         process_status = await self.repository.get_by_process_id(process_status_id)
         if process_status is None:
             return None
 
-        if process_status.status == status:
-            return process_status
-
-        process_status.status = status
+        process_status.status = "FAILED"
         return await self.repository.save(process_status)
 
     def build_status_response(
@@ -322,49 +308,6 @@ class ProcessStatusService:
         agent_processes: list[AgentProcessStatus] | None = None,
     ) -> ProcessStatusResponse:
         agent_processes = agent_processes or []
-        children_by_parent = self._group_children(agent_processes)
-        data = self._build_summary_children(None, children_by_parent)
+        children_by_parent = group_children(agent_processes)
+        data = build_summary_children(None, children_by_parent)
         return ProcessStatusResponse.from_process_status(process_status, data=data)
-
-    @staticmethod
-    def _derive_process_status(
-        agent_processes: list[AgentProcessStatus],
-    ) -> ProcessStatusState:
-        if not agent_processes:
-            return "IN_PROGRESS"
-
-        statuses = [agent_process.status for agent_process in agent_processes]
-        if "FAILED" in statuses:
-            return "FAILED"
-        if "IN_PROGRESS" in statuses:
-            return "IN_PROGRESS"
-        return "SUCCEEDED"
-
-    @staticmethod
-    def _group_children(
-        agent_processes: list[AgentProcessStatus],
-    ) -> dict[UUID | None, list[AgentProcessStatus]]:
-        children_by_parent: dict[UUID | None, list[AgentProcessStatus]] = defaultdict(list)
-        for agent_process in agent_processes:
-            children_by_parent[agent_process.parent_agent_process_status_id].append(
-                agent_process
-            )
-        return children_by_parent
-
-    def _build_summary_children(
-        self,
-        parent_id: UUID | None,
-        children_by_parent: dict[UUID | None, list[AgentProcessStatus]],
-    ) -> list[AgentProcessStatusSummaryResponse]:
-        responses: list[AgentProcessStatusSummaryResponse] = []
-        for agent_process in children_by_parent.get(parent_id, []):
-            responses.append(
-                AgentProcessStatusSummaryResponse.from_agent_process_status(
-                    agent_process,
-                    children=self._build_summary_children(
-                        agent_process.id,
-                        children_by_parent,
-                    ),
-                )
-            )
-        return responses

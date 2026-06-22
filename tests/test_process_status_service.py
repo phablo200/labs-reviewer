@@ -8,6 +8,7 @@ from labs.process_status.models import (
     ProcessStatus,
     ProcessStatusNote,
 )
+from labs.process_status.helpers import derive_process_status
 from labs.process_status.schemas import ProcessStatusNoteRequest
 from labs.process_status.service import ProcessStatusService
 
@@ -259,6 +260,45 @@ def test_service_get_process_status_is_user_scoped() -> None:
 
     assert found is repository.process_status
     assert missing is None
+
+
+def test_service_mark_process_failed_updates_existing_process() -> None:
+    repository = _ProcessRepositoryStub()
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+    )
+
+    async def _mark() -> ProcessStatus | None:
+        return await service.mark_process_failed(
+            process_status_id=repository.process_status.id,
+            result="RuntimeError: boom",
+        )
+
+    result = anyio.run(_mark)
+
+    assert result is repository.process_status
+    assert repository.saved is repository.process_status
+    assert repository.saved.status == "FAILED"
+
+
+def test_service_mark_process_failed_returns_none_for_missing_process() -> None:
+    repository = _ProcessRepositoryStub()
+    service = ProcessStatusService(
+        repository=repository,
+        agent_repository=_AgentRepositoryStub(),
+    )
+
+    async def _mark() -> ProcessStatus | None:
+        return await service.mark_process_failed(
+            process_status_id=uuid4(),
+            result="RuntimeError: boom",
+        )
+
+    result = anyio.run(_mark)
+
+    assert result is None
+    assert repository.saved is None
 
 
 def test_service_lists_latest_process_statuses_for_user() -> None:
@@ -583,14 +623,9 @@ def test_service_agent_process_detail_includes_result() -> None:
 
 
 def test_service_derives_process_status_from_agent_processes() -> None:
-    service = ProcessStatusService(
-        repository=_ProcessRepositoryStub(),
-        agent_repository=_AgentRepositoryStub(),
-    )
-
-    assert service._derive_process_status([]) == "IN_PROGRESS"
+    assert derive_process_status([]) == "IN_PROGRESS"
     assert (
-        service._derive_process_status(
+        derive_process_status(
             [
                 _agent_process_status(status="SUCCEEDED"),
                 _agent_process_status(status="SUCCEEDED"),
@@ -599,7 +634,7 @@ def test_service_derives_process_status_from_agent_processes() -> None:
         == "SUCCEEDED"
     )
     assert (
-        service._derive_process_status(
+        derive_process_status(
             [
                 _agent_process_status(status="SUCCEEDED"),
                 _agent_process_status(status="IN_PROGRESS"),
@@ -608,7 +643,7 @@ def test_service_derives_process_status_from_agent_processes() -> None:
         == "IN_PROGRESS"
     )
     assert (
-        service._derive_process_status(
+        derive_process_status(
             [
                 _agent_process_status(status="FAILED"),
                 _agent_process_status(status="IN_PROGRESS"),

@@ -8,7 +8,9 @@ from labs.process_status.repository import (
     ProcessStatusNoteRepository,
     ProcessStatusRepository,
 )
-import labs.process_status.repository as repository_module
+import labs.process_status.repository.agent_process_status_repository as agent_repository_module
+import labs.process_status.repository.process_status_note_repository as note_repository_module
+import labs.process_status.repository.process_status_repository as process_repository_module
 
 
 class _FakeProcessStatus:
@@ -157,7 +159,7 @@ class _FakeAgentProcessStatus:
 
 
 def test_process_repository_create_inserts_process_status(monkeypatch) -> None:
-    monkeypatch.setattr(repository_module, "ProcessStatus", _FakeProcessStatus)
+    monkeypatch.setattr(process_repository_module, "ProcessStatus", _FakeProcessStatus)
     repository = ProcessStatusRepository()
     user_id = uuid4()
 
@@ -173,9 +175,9 @@ def test_process_repository_create_inserts_process_status(monkeypatch) -> None:
 
 
 def test_process_repository_create_writing_inserts_writting_status(monkeypatch) -> None:
-    monkeypatch.setattr(repository_module, "ProcessStatus", _FakeProcessStatus)
+    monkeypatch.setattr(process_repository_module, "ProcessStatus", _FakeProcessStatus)
     monkeypatch.setattr(
-        repository_module,
+        process_repository_module,
         "utc_now",
         lambda: datetime(2026, 6, 18, 10, 0, 0, tzinfo=timezone.utc),
     )
@@ -207,7 +209,11 @@ def test_process_repository_save_persists_process_status() -> None:
 
 
 def test_process_repository_lists_latest_processes_by_user(monkeypatch) -> None:
-    monkeypatch.setattr(repository_module, "ProcessStatus", _FakeProcessStatusFinder)
+    monkeypatch.setattr(
+        process_repository_module,
+        "ProcessStatus",
+        _FakeProcessStatusFinder,
+    )
     repository = ProcessStatusRepository()
     user_id = uuid4()
 
@@ -223,7 +229,11 @@ def test_process_repository_lists_latest_processes_by_user(monkeypatch) -> None:
 
 
 def test_process_repository_filters_processes_by_file_term(monkeypatch) -> None:
-    monkeypatch.setattr(repository_module, "ProcessStatus", _FakeProcessStatusFinder)
+    monkeypatch.setattr(
+        process_repository_module,
+        "ProcessStatus",
+        _FakeProcessStatusFinder,
+    )
     repository = ProcessStatusRepository()
     user_id = uuid4()
 
@@ -245,7 +255,7 @@ def test_process_repository_filters_processes_by_file_term(monkeypatch) -> None:
 
 def test_note_repository_create_inserts_process_status_note(monkeypatch) -> None:
     monkeypatch.setattr(
-        repository_module,
+        note_repository_module,
         "ProcessStatusNote",
         _FakeProcessStatusNote,
     )
@@ -294,7 +304,7 @@ def test_note_repository_list_by_process_status_ids_returns_empty_without_ids() 
 
 def test_note_repository_lists_notes_by_process_status_ids(monkeypatch) -> None:
     monkeypatch.setattr(
-        repository_module,
+        note_repository_module,
         "ProcessStatusNote",
         _FakeProcessStatusNoteFinder,
     )
@@ -318,7 +328,7 @@ def test_note_repository_lists_notes_by_process_status_ids(monkeypatch) -> None:
 
 def test_note_repository_lists_notes_by_single_process_status_id(monkeypatch) -> None:
     monkeypatch.setattr(
-        repository_module,
+        note_repository_module,
         "ProcessStatusNote",
         _FakeProcessStatusNoteFinder,
     )
@@ -342,7 +352,7 @@ def test_note_repository_lists_notes_by_single_process_status_id(monkeypatch) ->
 
 def test_note_repository_get_by_id_queries_note_id(monkeypatch) -> None:
     monkeypatch.setattr(
-        repository_module,
+        note_repository_module,
         "ProcessStatusNote",
         _FakeProcessStatusNoteFinder,
     )
@@ -360,7 +370,7 @@ def test_note_repository_get_by_id_queries_note_id(monkeypatch) -> None:
 
 def test_agent_repository_create_inserts_agent_process_status(monkeypatch) -> None:
     monkeypatch.setattr(
-        repository_module,
+        agent_repository_module,
         "AgentProcessStatus",
         _FakeAgentProcessStatus,
     )

@@ -8,7 +8,7 @@ import jwt
 
 from core.config import settings
 from labs.agents import router as lab_router
-from labs.process_status import router as process_status_router
+from labs.process_status.routers import process_status_router
 
 
 SECRET = "test-secret"

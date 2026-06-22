@@ -140,6 +140,11 @@ async def list_process_notes_by_process(
     ]
 
 
+@router.delete("/notes/{note_id}")
+async def destroy_note(note_id: UUID):
+    """Destroy a note by note_id."""
+
+
 @router.get("/{process_id}/status", response_model=ProcessStatusResponse)
 async def get_process_status(
     process_id: UUID,
