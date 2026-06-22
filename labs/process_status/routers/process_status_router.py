@@ -15,6 +15,9 @@ from labs.process_status.schemas import (
     ProcessStatusNoteResponse,
     ProcessStatusResponse,
     WritingProcessStatusResponse,
+    ProcessStatusNoteDestroyedResponse,
+    ProcessStatusPatchTitle,
+    ProcessStatusDestroyedResponse
 )
 from labs.process_status.service import ProcessStatusService
 
@@ -48,27 +51,31 @@ async def create_writing_process_status(
     return await service.create_writing_process_status(user_id=parse_user_id(user))
 
 
-@router.post("/notes/{process_status_id}", response_model=ProcessStatusNoteResponse)
-async def create_or_update_process_note(
-    process_status_id: UUID,
-    request: ProcessStatusNoteBodyRequest,
-    id: UUID | None = None,
+@router.get("/{process_id}/status", response_model=ProcessStatusResponse)
+async def get_process_status(
+    process_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
-) -> ProcessStatusNoteResponse:
-    """Create or update a note owned through its parent process status."""
-    note = await service.create_or_update_note(
+) -> ProcessStatusResponse:
+    """Return process status metadata for the authenticated user."""
+    process_status = await service.get_process_with_agent_processes(
+        process_id=process_id,
         user_id=parse_user_id(user),
-        request=ProcessStatusNoteRequest(
-            process_status_id=process_status_id,
-            note=request.note,
-        ),
-        note_id=id,
     )
-    if note is None:
-        raise HTTPException(status_code=404, detail="Process status note not found.")
+    if process_status is None:
+        raise HTTPException(status_code=404, detail="Process status not found.")
 
-    return note
+    return process_status
 
+@router.delete("/{process_id}/destroy")
+async def destroy_process(
+    process_id: UUID   
+):
+    """Destroy a process by id."""
+    result = await service.destroy_process(process_id)
+    if not result["status"]:
+        raise HTTPException(status_code=result["status_code"], detail=result)
+
+    return result
 
 @router.post("/files-note/{process_status_id}", response_model=ProcessStatusNoteResponse)
 async def create_file_note(
@@ -112,6 +119,27 @@ async def create_file_note(
 
     return note
 
+@router.post("/notes/{process_status_id}", response_model=ProcessStatusNoteResponse)
+async def create_or_update_process_note(
+    process_status_id: UUID,
+    request: ProcessStatusNoteBodyRequest,
+    id: UUID | None = None,
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> ProcessStatusNoteResponse:
+    """Create or update a note owned through its parent process status."""
+    note = await service.create_or_update_note(
+        user_id=parse_user_id(user),
+        request=ProcessStatusNoteRequest(
+            process_status_id=process_status_id,
+            note=request.note,
+        ),
+        note_id=id,
+    )
+    if note is None:
+        raise HTTPException(status_code=404, detail="Process status note not found.")
+
+    return note
+
 
 @router.get("/notes", response_model=list[ProcessStatusNoteResponse])
 async def list_process_notes(
@@ -140,22 +168,11 @@ async def list_process_notes_by_process(
     ]
 
 
-@router.delete("/notes/{note_id}")
+@router.delete("/notes/{note_id}", response_model=ProcessStatusNoteDestroyedResponse)
 async def destroy_note(note_id: UUID):
     """Destroy a note by note_id."""
+    result = await service.destroy_note(note_id)
+    if not result["status"]:
+        raise HTTPException(status_code=result["status_code"], detail=result)
 
-
-@router.get("/{process_id}/status", response_model=ProcessStatusResponse)
-async def get_process_status(
-    process_id: UUID,
-    user: AuthenticatedUser = Depends(get_current_user),
-) -> ProcessStatusResponse:
-    """Return process status metadata for the authenticated user."""
-    process_status = await service.get_process_with_agent_processes(
-        process_id=process_id,
-        user_id=parse_user_id(user),
-    )
-    if process_status is None:
-        raise HTTPException(status_code=404, detail="Process status not found.")
-
-    return process_status
+    return result

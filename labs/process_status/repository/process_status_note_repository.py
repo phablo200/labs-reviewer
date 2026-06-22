@@ -64,3 +64,12 @@ class ProcessStatusNoteRepository:
             .sort("created_at", "updated_at")
             .to_list()
         )
+
+    async def find_by_id(self, note_id: UUID) -> ProcessStatusNote:
+        result = await ProcessStatusNote.find_one(ProcessStatusNote.id == note_id)
+        return result
+
+    async def destroy_by_id(self, note_id: UUID) -> bool:
+        result = await ProcessStatusNote.find_one(ProcessStatusNote.id == note_id).delete()
+        return result.deleted_count == 1
+        

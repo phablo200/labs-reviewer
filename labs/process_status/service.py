@@ -289,6 +289,25 @@ class ProcessStatusService:
     async def save_process_status(self, process_status: ProcessStatus) -> ProcessStatus:
         return await self.repository.save(process_status)
 
+    async def destroy_process(self, process_id) -> bool:
+        exists = await self.repository.get_by_process_id(process_id)
+        if not exists:
+            return {
+                "id": str(process_id),
+                "status": False,
+                "status_code": 404,
+                "description": "Note not found"
+            }
+
+        result = await self.repository.destroy_by_id(process_id)
+        return {
+            "id": str(process_id),
+            "status": result,
+            "status_code": 422 if not result else 200,
+            "description": "Something went wrong" if not result else "Note destroyed successfully"
+        }
+        
+
     async def mark_process_failed(
         self,
         *,
@@ -311,3 +330,21 @@ class ProcessStatusService:
         children_by_parent = group_children(agent_processes)
         data = build_summary_children(None, children_by_parent)
         return ProcessStatusResponse.from_process_status(process_status, data=data)
+
+    async def destroy_note(self, note_id: UUID) -> bool:
+        exists = await self.note_repository.find_by_id(note_id)
+        if not exists:
+            return {
+                "id": str(note_id),
+                "status": False,
+                "status_code": 404,
+                "description": "Note not found"
+            }
+
+        result = await self.note_repository.destroy_by_id(note_id)
+        return {
+            "id": str(note_id),
+            "status": result,
+            "status_code": 422 if not result else 200,
+            "description": "Something went wrong" if not result else "Note destroyed successfully"
+        }

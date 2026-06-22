@@ -171,3 +171,18 @@ class ProcessStatusNoteResponse(BaseModel):
             created_at=process_status_note.created_at,
             updated_at=process_status_note.updated_at,
         )
+
+class ProcessStatusNoteDestroyedResponse(BaseModel):
+    id: UUID
+    status: bool
+    description: str
+
+class ProcessStatusPatchTitle(BaseModel):
+    id: UUID
+    status: bool
+    description: str
+
+class ProcessStatusDestroyedResponse(BaseModel):
+    id: UUID
+    status: bool
+    description: str

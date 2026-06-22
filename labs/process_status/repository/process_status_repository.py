@@ -71,3 +71,8 @@ class ProcessStatusRepository:
     async def save(self, process_status: ProcessStatus) -> ProcessStatus:
         await process_status.save()
         return process_status
+
+
+    async def destroy_by_id(self, process_id: UUID) -> bool:
+        result = await ProcessStatus.find_one(ProcessStatus.id == process_id).delete()
+        return result.deleted_count == 1
