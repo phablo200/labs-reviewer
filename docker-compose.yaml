@@ -1,0 +1,55 @@
+services:
+  api:
+    build: .
+    env_file:
+      - .env
+    environment:
+      TASK_DISPATCHER: celery
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: labs_reviewer
+    ports:
+      - "3015:80"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+
+  worker:
+    build: .
+    env_file:
+      - .env
+    command: celery -A core.tasks.celery_app.celery_app worker --loglevel=info
+    environment:
+      TASK_DISPATCHER: celery
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: labs_reviewer
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+volumes:
+  mongodb_data:

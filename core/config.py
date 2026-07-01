@@ -4,6 +4,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class Settings:
     PROJECT_NAME: str = "Agent Language Model"
     LANGUAGE_DB_PATH: str = os.getenv("LANGUAGE_DB_PATH", "public/language_database/ingl_s.json")
@@ -24,6 +32,18 @@ class Settings:
     )
     MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "labs_reviewer")
+    TASK_DISPATCHER: str = os.getenv("TASK_DISPATCHER", "background_tasks")
+    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND: str = os.getenv(
+        "CELERY_RESULT_BACKEND",
+        "redis://localhost:6379/1",
+    )
+    CELERY_TASK_MODULES: str = os.getenv(
+        "CELERY_TASK_MODULES",
+        "labs.tasks.celery_tasks",
+    )
+    CELERY_DLQ_ENABLED: bool = _env_bool("CELERY_DLQ_ENABLED", True)
+    CELERY_DLQ_KEY_PREFIX: str = os.getenv("CELERY_DLQ_KEY_PREFIX", "dlq")
 
 
 settings = Settings()

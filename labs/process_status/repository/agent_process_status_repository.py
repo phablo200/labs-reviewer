@@ -1,48 +1,11 @@
-"""Persistence operations for process status documents."""
+"""Persistence operations for agent process status documents."""
 
 from uuid import UUID
 
 from labs.process_status.models import (
     AgentProcessStatus,
     AgentProcessStatusState,
-    ProcessStatus,
 )
-
-
-class ProcessStatusRepository:
-    """Wrap Beanie operations for process status persistence."""
-
-    async def create(
-        self,
-        *,
-        file: str,
-        user_id: UUID,
-    ) -> ProcessStatus:
-        process_status = ProcessStatus(
-            file=file,
-            status="IN_PROGRESS",
-            user_id=user_id,
-        )
-        await process_status.insert()
-        return process_status
-
-    async def get_by_process_id(self, process_id: UUID) -> ProcessStatus | None:
-        return await ProcessStatus.find_one(ProcessStatus.id == process_id)
-
-    async def get_by_id(
-        self,
-        *,
-        process_id: UUID,
-        user_id: UUID,
-    ) -> ProcessStatus | None:
-        return await ProcessStatus.find_one(
-            ProcessStatus.id == process_id,
-            ProcessStatus.user_id == user_id,
-        )
-
-    async def save(self, process_status: ProcessStatus) -> ProcessStatus:
-        await process_status.save()
-        return process_status
 
 
 class AgentProcessStatusRepository:

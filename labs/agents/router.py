@@ -1,6 +1,8 @@
 """HTTP routes for Blog Post Writer features."""
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from uuid import UUID
+
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from core.auth.dependencies import get_current_user
 from core.auth.schemas import AuthenticatedUser
@@ -20,23 +22,16 @@ outputs_router = APIRouter(
 service = LabPostService()
 
 
-@router.post("/review")
+@router.post("/review/{process_status_id}")
 async def review(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
+    process_status_id: UUID,
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, str]:
-    """Transform markdown notes into a structured blog post."""
-    raw_content = await file.read()
-    try:
-        context = raw_content.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.") from exc
-
-    return await service.enqueue_markdown_organization(
+    """Transform stored process notes into a structured blog post."""
+    return await service.enqueue_markdown_organization_for_process(
         background_tasks=background_tasks,
-        filename=file.filename or "",
-        context=context,
+        process_status_id=process_status_id,
         user_id=parse_user_id(user),
     )
 

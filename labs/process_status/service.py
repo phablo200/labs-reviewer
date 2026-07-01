@@ -1,24 +1,40 @@
 """Business operations for Labs process status tracking."""
 
-from collections import defaultdict
+from dataclasses import dataclass
 from uuid import UUID
 
-from core.utils.datetime import utc_now
+from fastapi import status
+
+from labs.process_status.helpers import (
+    build_status_response,
+    build_summary_children,
+    group_children,
+    mark_agent_process,
+    mark_process_failed,
+)
 from labs.process_status.models import (
     AgentProcessStatus,
-    AgentProcessStatusState,
     ProcessStatus,
-    ProcessStatusState,
+    ProcessStatusNote,
 )
 from labs.process_status.repository import (
     AgentProcessStatusRepository,
+    ProcessStatusNoteRepository,
     ProcessStatusRepository,
 )
 from labs.process_status.schemas import (
     AgentProcessStatusDetailResponse,
-    AgentProcessStatusSummaryResponse,
+    ProcessStatusNoteRequest,
+    ProcessStatusNoteResponse,
     ProcessStatusResponse,
+    WritingProcessStatusResponse,
 )
+
+
+@dataclass(frozen=True)
+class ProcessStatusNotes:
+    process_status: ProcessStatus
+    notes: list[ProcessStatusNote]
 
 
 class ProcessStatusService:
@@ -28,9 +44,11 @@ class ProcessStatusService:
         self,
         repository: ProcessStatusRepository | None = None,
         agent_repository: AgentProcessStatusRepository | None = None,
+        note_repository: ProcessStatusNoteRepository | None = None,
     ) -> None:
         self.repository = repository or ProcessStatusRepository()
         self.agent_repository = agent_repository or AgentProcessStatusRepository()
+        self.note_repository = note_repository or ProcessStatusNoteRepository()
 
     async def create_process_for_review(
         self,
@@ -47,6 +65,115 @@ class ProcessStatusService:
         user_id: UUID,
     ) -> ProcessStatus:
         return await self.create_process_for_review(file=file, user_id=user_id)
+
+    async def create_writing_process_status(
+        self,
+        *,
+        user_id: UUID,
+    ) -> WritingProcessStatusResponse:
+        process_status = await self.repository.create_writing(user_id=user_id)
+        return WritingProcessStatusResponse.from_process_status(process_status)
+
+    async def create_or_update_note(
+        self,
+        *,
+        user_id: UUID,
+        request: ProcessStatusNoteRequest,
+        note_id: UUID | None = None,
+    ) -> ProcessStatusNoteResponse | None:
+        if note_id is None:
+            process_status = await self.repository.get_by_id(
+                process_id=request.process_status_id,
+                user_id=user_id,
+            )
+            if process_status is None:
+                return None
+
+            note = await self.note_repository.create(
+                process_status_id=process_status.id,
+                description=request.note,
+            )
+            return ProcessStatusNoteResponse.from_process_status_note(note)
+
+        note = await self.note_repository.get_by_id(note_id)
+        if note is None:
+            return None
+
+        process_status = await self.repository.get_by_id(
+            process_id=note.process_status_id,
+            user_id=user_id,
+        )
+        if process_status is None:
+            return None
+
+        updated_note = await self.note_repository.update(
+            note=note,
+            description=request.note,
+        )
+        return ProcessStatusNoteResponse.from_process_status_note(updated_note)
+
+    async def create_note_from_file(
+        self,
+        *,
+        process_status_id: UUID,
+        user_id: UUID,
+        description: str,
+    ) -> ProcessStatusNoteResponse | None:
+        process_status = await self.repository.get_by_id(
+            process_id=process_status_id,
+            user_id=user_id,
+        )
+        if process_status is None:
+            return None
+
+        note = await self.note_repository.create(
+            process_status_id=process_status.id,
+            description=description,
+        )
+        return ProcessStatusNoteResponse.from_process_status_note(note)
+
+    async def list_notes(self, *, user_id: UUID) -> list[ProcessStatusNoteResponse]:
+        process_statuses = await self.repository.list_by_user_id(
+            user_id=user_id,
+            limit=0,
+        )
+        process_status_ids = [process_status.id for process_status in process_statuses]
+        notes = await self.note_repository.list_by_process_status_ids(process_status_ids)
+        return [
+            ProcessStatusNoteResponse.from_process_status_note(note)
+            for note in notes
+        ]
+
+    async def get_process_notes(
+        self,
+        *,
+        process_status_id: UUID,
+        user_id: UUID,
+    ) -> ProcessStatusNotes | None:
+        process_status = await self.repository.get_by_id(
+            process_id=process_status_id,
+            user_id=user_id,
+        )
+        if process_status is None:
+            return None
+
+        notes = await self.note_repository.list_by_process_status_id(process_status.id)
+        return ProcessStatusNotes(process_status=process_status, notes=notes)
+
+    async def list_notes_for_process(
+        self,
+        *,
+        process_status_id: UUID,
+        user_id: UUID,
+    ) -> list[ProcessStatusNote] | None:
+        process_notes = await self.get_process_notes(
+            process_status_id=process_status_id,
+            user_id=user_id,
+        )
+        if process_notes is None:
+            return None
+
+        return process_notes.notes
 
     async def create_agent_process(
         self,
@@ -71,7 +198,9 @@ class ProcessStatusService:
         agent_process_status: AgentProcessStatus,
         result: str | None = None,
     ) -> AgentProcessStatus:
-        return await self._mark_agent_process(
+        return await mark_agent_process(
+            agent_repository=self.agent_repository,
+            process_repository=self.repository,
             agent_process_status=agent_process_status,
             status="SUCCEEDED",
             result=result,
@@ -83,27 +212,13 @@ class ProcessStatusService:
         agent_process_status: AgentProcessStatus,
         result: str | None = None,
     ) -> AgentProcessStatus:
-        return await self._mark_agent_process(
+        return await mark_agent_process(
+            agent_repository=self.agent_repository,
+            process_repository=self.repository,
             agent_process_status=agent_process_status,
             status="FAILED",
             result=result,
         )
-
-    async def _mark_agent_process(
-        self,
-        *,
-        agent_process_status: AgentProcessStatus,
-        status: AgentProcessStatusState,
-        result: str | None = None,
-    ) -> AgentProcessStatus:
-        updated_agent_process_status = await self.agent_repository.update_status(
-            agent_process_status=agent_process_status,
-            status=status,
-            finished_at=utc_now(),
-            result=result,
-        )
-        await self._sync_process_status(updated_agent_process_status.process_status_id)
-        return updated_agent_process_status
 
     async def get_process_status(
         self,
@@ -112,6 +227,23 @@ class ProcessStatusService:
         user_id: UUID,
     ) -> ProcessStatus | None:
         return await self.repository.get_by_id(process_id=process_id, user_id=user_id)
+
+    async def list_process_statuses(
+        self,
+        *,
+        user_id: UUID,
+        term: str | None = None,
+        limit: int = 100,
+    ) -> list[ProcessStatusResponse]:
+        process_statuses = await self.repository.list_by_user_id(
+            user_id=user_id,
+            term=term,
+            limit=limit,
+        )
+        return [
+            ProcessStatusResponse.from_process_status(process_status)
+            for process_status in process_statuses
+        ]
 
     async def get_process_with_agent_processes(
         self,
@@ -129,7 +261,7 @@ class ProcessStatusService:
         agent_processes = await self.agent_repository.list_by_process_status_id(
             process_status.id
         )
-        return self.build_status_response(process_status, agent_processes)
+        return build_status_response(process_status, agent_processes)
 
     async def get_agent_process_with_children(
         self,
@@ -151,8 +283,8 @@ class ProcessStatusService:
         agent_processes = await self.agent_repository.list_by_process_status_id(
             process_status.id
         )
-        children_by_parent = self._group_children(agent_processes)
-        children = self._build_summary_children(agent_process.id, children_by_parent)
+        children_by_parent = group_children(agent_processes)
+        children = build_summary_children(agent_process.id, children_by_parent)
         return AgentProcessStatusDetailResponse.from_agent_process_status(
             agent_process,
             children=children,
@@ -161,70 +293,73 @@ class ProcessStatusService:
     async def save_process_status(self, process_status: ProcessStatus) -> ProcessStatus:
         return await self.repository.save(process_status)
 
-    async def _sync_process_status(self, process_status_id: UUID) -> ProcessStatus | None:
-        agent_processes = await self.agent_repository.list_by_process_status_id(
-            process_status_id
+    async def destroy_process(self, process_id) -> bool:
+        exists = await self.repository.get_by_process_id(process_id)
+        if not exists:
+            return {
+                "id": str(process_id),
+                "status": False,
+                "status_code": status.HTTP_404_NOT_FOUND,
+                "description": "Note not found",
+            }
+
+        result = await self.repository.destroy_by_id(process_id)
+        return {
+            "id": str(process_id),
+            "status": result,
+            "status_code": (
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+                if not result
+                else status.HTTP_200_OK
+            ),
+            "description": (
+                "Something went wrong"
+                if not result
+                else "Note destroyed successfully"
+            ),
+        }
+
+    async def mark_process_failed(
+        self,
+        *,
+        process_status_id: UUID,
+        result: str | None = None,
+    ) -> ProcessStatus | None:
+        return await mark_process_failed(
+            process_repository=self.repository,
+            process_status_id=process_status_id,
+            result=result,
         )
-        status = self._derive_process_status(agent_processes)
-        process_status = await self.repository.get_by_process_id(process_status_id)
-        if process_status is None:
-            return None
-
-        if process_status.status == status:
-            return process_status
-
-        process_status.status = status
-        return await self.repository.save(process_status)
 
     def build_status_response(
         self,
         process_status: ProcessStatus,
         agent_processes: list[AgentProcessStatus] | None = None,
     ) -> ProcessStatusResponse:
-        agent_processes = agent_processes or []
-        children_by_parent = self._group_children(agent_processes)
-        data = self._build_summary_children(None, children_by_parent)
-        return ProcessStatusResponse.from_process_status(process_status, data=data)
+        return build_status_response(process_status, agent_processes)
 
-    @staticmethod
-    def _derive_process_status(
-        agent_processes: list[AgentProcessStatus],
-    ) -> ProcessStatusState:
-        if not agent_processes:
-            return "IN_PROGRESS"
+    async def destroy_note(self, note_id: UUID) -> bool:
+        exists = await self.note_repository.find_by_id(note_id)
+        if not exists:
+            return {
+                "id": str(note_id),
+                "status": False,
+                "status_code": status.HTTP_404_NOT_FOUND,
+                "description": "Note not found",
+            }
 
-        statuses = [agent_process.status for agent_process in agent_processes]
-        if "FAILED" in statuses:
-            return "FAILED"
-        if "IN_PROGRESS" in statuses:
-            return "IN_PROGRESS"
-        return "SUCCEEDED"
-
-    @staticmethod
-    def _group_children(
-        agent_processes: list[AgentProcessStatus],
-    ) -> dict[UUID | None, list[AgentProcessStatus]]:
-        children_by_parent: dict[UUID | None, list[AgentProcessStatus]] = defaultdict(list)
-        for agent_process in agent_processes:
-            children_by_parent[agent_process.parent_agent_process_status_id].append(
-                agent_process
-            )
-        return children_by_parent
-
-    def _build_summary_children(
-        self,
-        parent_id: UUID | None,
-        children_by_parent: dict[UUID | None, list[AgentProcessStatus]],
-    ) -> list[AgentProcessStatusSummaryResponse]:
-        responses: list[AgentProcessStatusSummaryResponse] = []
-        for agent_process in children_by_parent.get(parent_id, []):
-            responses.append(
-                AgentProcessStatusSummaryResponse.from_agent_process_status(
-                    agent_process,
-                    children=self._build_summary_children(
-                        agent_process.id,
-                        children_by_parent,
-                    ),
-                )
-            )
-        return responses
+        result = await self.note_repository.destroy_by_id(note_id)
+        return {
+            "id": str(note_id),
+            "status": result,
+            "status_code": (
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+                if not result
+                else status.HTTP_200_OK
+            ),
+            "description": (
+                "Something went wrong"
+                if not result
+                else "Note destroyed successfully"
+            ),
+        }

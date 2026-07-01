@@ -7,7 +7,8 @@ from core.auth import router as auth_router
 from core.database.mongodb import close_mongodb, init_mongodb
 from core.middleware.required_headers import RequiredHeadersMiddleware
 from labs.agents import router as lab_post
-from labs.process_status import router as process_status_router
+from labs.process_status.routers import agent_router as agent_process_status_router
+from labs.process_status.routers import process_status_router
 
 
 @asynccontextmanager
@@ -47,7 +48,7 @@ app.add_middleware(RequiredHeadersMiddleware)
 app.include_router(lab_post.router)
 app.include_router(lab_post.outputs_router)
 app.include_router(process_status_router.router)
-app.include_router(process_status_router.agent_process_router)
+app.include_router(agent_process_status_router.agent_process_router)
 app.include_router(auth_router.router)
 
 
