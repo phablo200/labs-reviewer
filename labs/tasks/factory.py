@@ -41,7 +41,7 @@ class MarkdownOrganizationTaskDispatcher:
         self,
         *,
         job: MarkdownOrganizationJob,
-        background_tasks: BackgroundTasks | None = None,
+        background_tasks: BackgroundTasks,
     ) -> None:
         if isinstance(self.task_dispatcher, BackgroundTasksDispatcher):
             if background_tasks is None:
@@ -50,7 +50,8 @@ class MarkdownOrganizationTaskDispatcher:
                 )
 
             await self.task_dispatcher.enqueue(
-                background_task_submission=BackgroundTaskSubmission(
+                background_tasks=background_tasks,
+                submission=BackgroundTaskSubmission(
                     function=MarkdownHelper.process_and_save_markdown_with_status,
                     args=(
                         job.context,
@@ -62,13 +63,12 @@ class MarkdownOrganizationTaskDispatcher:
                         self.process_status_service,
                     ),
                 ),
-                background_tasks=background_tasks,
             )
             return
 
         if isinstance(self.task_dispatcher, CeleryTaskDispatcher):
             await self.task_dispatcher.enqueue(
-                celery_task_submission=CeleryTaskSubmission(
+                submission=CeleryTaskSubmission(
                     task=process_markdown_job,
                     args=(
                         job.context,

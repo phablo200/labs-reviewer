@@ -3,10 +3,14 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from fastapi import status
+
 from labs.process_status.helpers import (
+    build_status_response,
     build_summary_children,
     group_children,
     mark_agent_process,
+    mark_process_failed,
 )
 from labs.process_status.models import (
     AgentProcessStatus,
@@ -257,7 +261,7 @@ class ProcessStatusService:
         agent_processes = await self.agent_repository.list_by_process_status_id(
             process_status.id
         )
-        return self.build_status_response(process_status, agent_processes)
+        return build_status_response(process_status, agent_processes)
 
     async def get_agent_process_with_children(
         self,
@@ -295,18 +299,25 @@ class ProcessStatusService:
             return {
                 "id": str(process_id),
                 "status": False,
-                "status_code": 404,
-                "description": "Note not found"
+                "status_code": status.HTTP_404_NOT_FOUND,
+                "description": "Note not found",
             }
 
         result = await self.repository.destroy_by_id(process_id)
         return {
             "id": str(process_id),
             "status": result,
-            "status_code": 422 if not result else 200,
-            "description": "Something went wrong" if not result else "Note destroyed successfully"
+            "status_code": (
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+                if not result
+                else status.HTTP_200_OK
+            ),
+            "description": (
+                "Something went wrong"
+                if not result
+                else "Note destroyed successfully"
+            ),
         }
-        
 
     async def mark_process_failed(
         self,
@@ -314,22 +325,18 @@ class ProcessStatusService:
         process_status_id: UUID,
         result: str | None = None,
     ) -> ProcessStatus | None:
-        process_status = await self.repository.get_by_process_id(process_status_id)
-        if process_status is None:
-            return None
-
-        process_status.status = "FAILED"
-        return await self.repository.save(process_status)
+        return await mark_process_failed(
+            process_repository=self.repository,
+            process_status_id=process_status_id,
+            result=result,
+        )
 
     def build_status_response(
         self,
         process_status: ProcessStatus,
         agent_processes: list[AgentProcessStatus] | None = None,
     ) -> ProcessStatusResponse:
-        agent_processes = agent_processes or []
-        children_by_parent = group_children(agent_processes)
-        data = build_summary_children(None, children_by_parent)
-        return ProcessStatusResponse.from_process_status(process_status, data=data)
+        return build_status_response(process_status, agent_processes)
 
     async def destroy_note(self, note_id: UUID) -> bool:
         exists = await self.note_repository.find_by_id(note_id)
@@ -337,14 +344,22 @@ class ProcessStatusService:
             return {
                 "id": str(note_id),
                 "status": False,
-                "status_code": 404,
-                "description": "Note not found"
+                "status_code": status.HTTP_404_NOT_FOUND,
+                "description": "Note not found",
             }
 
         result = await self.note_repository.destroy_by_id(note_id)
         return {
             "id": str(note_id),
             "status": result,
-            "status_code": 422 if not result else 200,
-            "description": "Something went wrong" if not result else "Note destroyed successfully"
+            "status_code": (
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+                if not result
+                else status.HTTP_200_OK
+            ),
+            "description": (
+                "Something went wrong"
+                if not result
+                else "Note destroyed successfully"
+            ),
         }

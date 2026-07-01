@@ -1,4 +1,4 @@
-from fastapi import Request
+from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
@@ -18,13 +18,13 @@ class RequiredHeadersMiddleware(BaseHTTPMiddleware):
                 temperature = float(llm_temperature)
             except ValueError:
                 return JSONResponse(
-                    status_code=400,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     content={"detail": "`llm_temperature` must be a number between 0 and 1."},
                 )
 
             if not 0 <= temperature <= 1:
                 return JSONResponse(
-                    status_code=400,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     content={"detail": "`llm_temperature` must be between 0 and 1."},
                 )
             request.state.llm_temperature = temperature
@@ -34,7 +34,7 @@ class RequiredHeadersMiddleware(BaseHTTPMiddleware):
             allowed_llms = {provider.value for provider in LLM}
             if llm not in allowed_llms:
                 return JSONResponse(
-                    status_code=400,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     content={"detail": f"`llm` must be one of: {', '.join(sorted(allowed_llms))}."},
                 )
             selected_llm = LLM(llm)
@@ -43,14 +43,14 @@ class RequiredHeadersMiddleware(BaseHTTPMiddleware):
         if llm_model is not None:
             if selected_llm is None:
                 return JSONResponse(
-                    status_code=400,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     content={"detail": "`llm_model` requires the `llm` header."},
                 )
 
             allowed_models = LLM_MODELS[selected_llm]
             if llm_model not in allowed_models:
                 return JSONResponse(
-                    status_code=400,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     content={
                         "detail": (
                             f"`llm_model` is invalid for llm '{selected_llm.value}'. "

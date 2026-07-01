@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 from core.auth.schemas import AuthenticatedUser
 
@@ -10,7 +10,7 @@ def parse_user_id(user: AuthenticatedUser) -> UUID:
         return UUID(user.id)
     except ValueError as exc:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Authenticated user id is invalid.",
         ) from exc
 

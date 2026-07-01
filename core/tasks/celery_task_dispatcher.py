@@ -1,16 +1,20 @@
 """Celery task dispatch strategy."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from core.tasks.exceptions import TaskDispatchEnqueueError
 
+
+class CeleryDelayableTask(Protocol):
+    def delay(self, *args: Any, **kwargs: Any) -> Any:
+        ...  
 
 @dataclass(frozen=True)
 class CeleryTaskSubmission:
     """Task payload for Celery dispatch."""
 
-    task: Any
+    task: CeleryDelayableTask
     args: tuple[Any, ...] = ()
 
 
@@ -20,9 +24,9 @@ class CeleryTaskDispatcher:
     async def enqueue(
         self,
         *,
-        celery_task_submission: CeleryTaskSubmission,
+        submission: CeleryTaskSubmission,
     ) -> None:
         try:
-            celery_task_submission.task.delay(*celery_task_submission.args)
+            submission.task.delay(*submission.args)
         except Exception as exc:
             raise TaskDispatchEnqueueError("Failed to enqueue Celery task.") from exc

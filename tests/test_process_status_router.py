@@ -238,7 +238,7 @@ def test_list_endpoint_returns_latest_processes_for_authenticated_user(monkeypat
     service = _ServiceStub(process_list_response=[_process_status_response()])
     monkeypatch.setattr(process_status_router, "service", service)
 
-    response = anyio.run(_get, _app(), "/labs/processes/")
+    response = anyio.run(_get, _app(), "/labs/processes")
 
     assert response.status_code == 200
     payload = response.json()
@@ -252,7 +252,7 @@ def test_list_endpoint_passes_term_query_to_service(monkeypatch) -> None:
     service = _ServiceStub(process_list_response=[_process_status_response()])
     monkeypatch.setattr(process_status_router, "service", service)
 
-    response = anyio.run(_get, _app(), "/labs/processes/?term=notes")
+    response = anyio.run(_get, _app(), "/labs/processes?term=notes")
 
     assert response.status_code == 200
     assert service.list_calls == [(USER_ID, "notes")]

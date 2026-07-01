@@ -3,7 +3,7 @@
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from core.auth.dependencies import get_current_user
 from core.auth.schemas import AuthenticatedUser
@@ -12,12 +12,10 @@ from labs.process_status.constants import ALLOWED_NOTE_FILE_SUFFIXES, NOTE_FILE_
 from labs.process_status.schemas import (
     ProcessStatusNoteBodyRequest,
     ProcessStatusNoteRequest,
+    ProcessStatusNoteDestroyedResponse,
     ProcessStatusNoteResponse,
     ProcessStatusResponse,
     WritingProcessStatusResponse,
-    ProcessStatusNoteDestroyedResponse,
-    ProcessStatusPatchTitle,
-    ProcessStatusDestroyedResponse
 )
 from labs.process_status.service import ProcessStatusService
 
@@ -25,7 +23,7 @@ router = APIRouter(prefix="/labs/processes", tags=["Process Status"])
 service = ProcessStatusService()
 
 
-@router.get("/", response_model=list[ProcessStatusResponse])
+@router.get("", response_model=list[ProcessStatusResponse])
 async def list_process_statuses(
     term: str | None = None,
     user: AuthenticatedUser = Depends(get_current_user),
@@ -62,20 +60,23 @@ async def get_process_status(
         user_id=parse_user_id(user),
     )
     if process_status is None:
-        raise HTTPException(status_code=404, detail="Process status not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Process status not found.",
+        )
 
     return process_status
 
+
 @router.delete("/{process_id}/destroy")
-async def destroy_process(
-    process_id: UUID   
-):
+async def destroy_process(process_id: UUID):
     """Destroy a process by id."""
     result = await service.destroy_process(process_id)
     if not result["status"]:
         raise HTTPException(status_code=result["status_code"], detail=result)
 
     return result
+
 
 @router.post("/files-note/{process_status_id}", response_model=ProcessStatusNoteResponse)
 async def create_file_note(
@@ -86,28 +87,37 @@ async def create_file_note(
     """Store uploaded note file content for an existing process."""
     filename = Path(file.filename or "").name
     if not filename:
-        raise HTTPException(status_code=400, detail="A filename is required.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A filename is required.",
+        )
 
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_NOTE_FILE_SUFFIXES:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only .md and .txt files are supported.",
         )
 
     raw_content = await file.read()
     if not raw_content:
-        raise HTTPException(status_code=422, detail="File must not be empty.")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="File must not be empty.",
+        )
     if len(raw_content) > NOTE_FILE_MAX_BYTES:
         raise HTTPException(
-            status_code=422,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="File must be 10 KiB or smaller.",
         )
 
     try:
         description = raw_content.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be UTF-8 encoded.",
+        ) from exc
 
     note = await service.create_note_from_file(
         process_status_id=process_status_id,
@@ -115,9 +125,13 @@ async def create_file_note(
         description=description,
     )
     if note is None:
-        raise HTTPException(status_code=404, detail="Process status not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Process status not found.",
+        )
 
     return note
+
 
 @router.post("/notes/{process_status_id}", response_model=ProcessStatusNoteResponse)
 async def create_or_update_process_note(
@@ -136,7 +150,10 @@ async def create_or_update_process_note(
         note_id=id,
     )
     if note is None:
-        raise HTTPException(status_code=404, detail="Process status note not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Process status note not found.",
+        )
 
     return note
 
@@ -160,7 +177,10 @@ async def list_process_notes_by_process(
         user_id=parse_user_id(user),
     )
     if process_notes is None:
-        raise HTTPException(status_code=404, detail="Process status not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Process status not found.",
+        )
 
     return [
         ProcessStatusNoteResponse.from_process_status_note(note)

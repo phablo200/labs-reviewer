@@ -11,6 +11,7 @@ from labs.process_status.models import (
     ProcessStatusState,
 )
 from labs.process_status.schemas import AgentProcessStatusSummaryResponse
+from labs.process_status.schemas import ProcessStatusResponse
 
 
 async def mark_agent_process(
@@ -97,3 +98,27 @@ def build_summary_children(
             )
         )
     return responses
+
+
+async def mark_process_failed(
+    *,
+    process_repository,
+    process_status_id: UUID,
+    result: str | None = None,
+) -> ProcessStatus | None:
+    process_status = await process_repository.get_by_process_id(process_status_id)
+    if process_status is None:
+        return None
+
+    process_status.status = "FAILED"
+    return await process_repository.save(process_status)
+
+
+def build_status_response(
+    process_status: ProcessStatus,
+    agent_processes: list[AgentProcessStatus] | None = None,
+) -> ProcessStatusResponse:
+    agent_processes = agent_processes or []
+    children_by_parent = group_children(agent_processes)
+    data = build_summary_children(None, children_by_parent)
+    return ProcessStatusResponse.from_process_status(process_status, data=data)

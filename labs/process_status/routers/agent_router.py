@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.auth.dependencies import get_current_user
 from core.auth.schemas import AuthenticatedUser
@@ -31,6 +31,9 @@ async def get_agent_process_status(
         user_id=parse_user_id(user),
     )
     if agent_process_status is None:
-        raise HTTPException(status_code=404, detail="Agent process status not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent process status not found.",
+        )
 
     return agent_process_status

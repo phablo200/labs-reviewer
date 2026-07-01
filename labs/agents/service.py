@@ -5,7 +5,7 @@ import re
 from typing import Any
 from uuid import UUID
 
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import BackgroundTasks, HTTPException, status
 
 from core.tasks.exceptions import TaskDispatchEnqueueError
 from labs.agents.labs_reviewer.schema import LabReviewerRequest, LabReviewerResponse
@@ -47,11 +47,17 @@ class LabPostService:
         original_name = Path(filename or "")
         safe_name = original_name.name
         if not safe_name:
-            raise HTTPException(status_code=400, detail="A filename is required.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A filename is required.",
+            )
 
         filename = safe_name
         if not filename.lower().endswith(".md"):
-            raise HTTPException(status_code=400, detail="Only .md files are supported.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only .md files are supported.",
+            )
 
         output_name = f"{original_name.stem}_reviewd{original_name.suffix or '.md'}"
         output_path = self.markdown_output_dir / output_name
@@ -71,7 +77,7 @@ class LabPostService:
             )
         except TaskDispatchEnqueueError as exc:
             raise HTTPException(
-                status_code=503,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to enqueue markdown processing job.",
             ) from exc
 
@@ -94,11 +100,14 @@ class LabPostService:
             user_id=user_id,
         )
         if process_notes is None:
-            raise HTTPException(status_code=404, detail="Process status not found.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Process status not found.",
+            )
 
         if not process_notes.notes:
             raise HTTPException(
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Process status has no notes to review.",
             )
 
@@ -119,7 +128,7 @@ class LabPostService:
             )
         except TaskDispatchEnqueueError as exc:
             raise HTTPException(
-                status_code=503,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to enqueue markdown processing job.",
             ) from exc
 

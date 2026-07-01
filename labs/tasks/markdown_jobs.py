@@ -24,6 +24,6 @@ class MarkdownOrganizationDispatcher(Protocol):
         self,
         *,
         job: MarkdownOrganizationJob,
-        background_tasks: BackgroundTasks | None = None,
+        background_tasks: BackgroundTasks,
     ) -> None:
         ...

@@ -21,10 +21,10 @@ class BackgroundTasksDispatcher:
     async def enqueue(
         self,
         *,
-        background_task_submission: BackgroundTaskSubmission,
+        submission: BackgroundTaskSubmission,
         background_tasks: BackgroundTasks,
     ) -> None:
         background_tasks.add_task(
-            background_task_submission.function,
-            *background_task_submission.args,
+            submission.function,
+            *submission.args,
         )
